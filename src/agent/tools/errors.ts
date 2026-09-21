@@ -6,6 +6,7 @@ const TOOL_ERROR_CODES = [
   "RATE_LIMITED",
   "TIMEOUT",
   "CANCELLED",
+  "CREDITS_INSUFFICIENT",
   "FAILED",
   "DISABLED",
 ] as const;

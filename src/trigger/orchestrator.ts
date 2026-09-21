@@ -10,6 +10,7 @@ import { agentTurnPayloadSchema } from "./payloads.js";
 import { agentTurnsQueue } from "./queues.js";
 import { createTriggerRealtime } from "./realtime.js";
 import { createTriggerWaitpoints } from "./waitpoints.js";
+import { createCreditGateway } from "@/server/credits/settle.js";
 
 /**
  * One durable agent turn. Trigger with:
@@ -46,6 +47,7 @@ export const orchestrateAgentTurn = schemaTask({
         children: triggerChildTasks,
         waitpoints: createTriggerWaitpoints(store),
         realtime: createTriggerRealtime(),
+        credits: createCreditGateway(prisma),
         maxTurns: parsePositiveInt(process.env.AGENT_MAX_TURNS, 8),
         waitTimeout: process.env.WAITPOINT_TIMEOUT ?? "24h",
         signal,

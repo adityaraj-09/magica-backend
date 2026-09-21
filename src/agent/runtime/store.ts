@@ -16,6 +16,7 @@ export type RunSnapshot = {
   status: string;
   triggerRunId: string | null;
   reservedCredits: string;
+  settledCredits: string;
 };
 
 export type ToolInvocationSnapshot = {
@@ -25,6 +26,7 @@ export type ToolInvocationSnapshot = {
   status: string;
   input: unknown;
   output: unknown;
+  creditCost: string;
   errorMessage: string | null;
 };
 
@@ -53,6 +55,7 @@ export class AgentStore {
         status: true,
         triggerRunId: true,
         reservedCredits: true,
+        settledCredits: true,
         chat: { select: { deletedAt: true } },
       },
     });
@@ -65,6 +68,7 @@ export class AgentStore {
       status: run.status,
       triggerRunId: run.triggerRunId,
       reservedCredits: run.reservedCredits.toString(),
+      settledCredits: run.settledCredits.toString(),
     };
   }
 
@@ -175,6 +179,7 @@ export class AgentStore {
       status: row.status,
       input: row.input,
       output: row.output,
+      creditCost: row.creditCost.toString(),
       errorMessage: row.errorMessage,
     };
   }
@@ -384,6 +389,7 @@ export class AgentStore {
     completionTokens?: number;
     thinkingStartedAt?: Date | null;
     thinkingDurationMs?: number;
+    settledCredits?: string;
     errorCode?: string | null;
     errorMessage?: string | null;
     startedAt?: Date;
@@ -402,6 +408,9 @@ export class AgentStore {
           completionTokens: input.completionTokens,
           thinkingStartedAt: input.thinkingStartedAt,
           thinkingDurationMs: input.thinkingDurationMs,
+          settledCredits: input.settledCredits
+            ? new Prisma.Decimal(input.settledCredits)
+            : undefined,
           errorCode: input.errorCode,
           errorMessage: input.errorMessage,
           startedAt: input.startedAt,

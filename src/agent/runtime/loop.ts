@@ -19,6 +19,7 @@ import {
 import { AgentStore, type RunSnapshot } from "./store.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint.js";
+import { noopCredits, type CreditGateway } from "@/server/credits/settle.js";
 
 export type AgentTurnInput = {
   chatId: string;
@@ -38,6 +39,7 @@ export type AgentLoopDeps = {
   children: ChildTaskRunner;
   waitpoints: WaitpointGateway;
   realtime?: RealtimePublisher;
+  credits?: CreditGateway;
   maxTurns: number;
   waitTimeout: string;
   signal: AbortSignal;
@@ -77,6 +79,7 @@ export async function runAgentLoop(
   const thinkingStartedAt = new Date();
   let planWaitPending = Boolean(input.planMode);
   const realtime = deps.realtime ?? noopRealtime;
+  const credits = deps.credits ?? noopCredits;
   const live = createLiveMetadata(run, assistant.id);
 
   await deps.store.updateRun({
@@ -227,6 +230,7 @@ export async function runAgentLoop(
         liveBlocks: blocks,
         live,
         realtime,
+        credits,
         thinkingStartedAt,
         deps,
       });
@@ -341,6 +345,7 @@ async function executeProposals(input: {
   liveBlocks: ContentBlock[];
   live: RunMetadata;
   realtime: RealtimePublisher;
+  credits: CreditGateway;
   thinkingStartedAt: Date;
   deps: AgentLoopDeps;
 }): Promise<{ blocks: ContentBlock[]; aborted?: unknown }> {
@@ -362,6 +367,13 @@ async function executeProposals(input: {
         proposal.id,
       );
       if (existing?.status === "SUCCESS") {
+        await input.credits.settleTool({
+          run: input.run,
+          toolCallId: proposal.id,
+          toolInvocationId: existing.id,
+          toolName: proposal.name,
+          cost: existing.creditCost,
+        });
         const already = input.liveBlocks.some(
           (block) => block.type === "tool_result" && block.toolCallId === proposal.id,
         );
@@ -375,6 +387,35 @@ async function executeProposals(input: {
       try {
         const tool = input.deps.registry.get(proposal.name);
         provider = tool.provider;
+        const estimate = await estimateOne(input.deps.registry, proposal);
+        const spendable = await input.credits.spendable(input.run);
+        if (estimate.gt(spendable)) {
+          const error = new ToolError(
+            "CREDITS_INSUFFICIENT",
+            "Not enough credits to run this tool.",
+            { retryable: false },
+          );
+          batchAbort.abort();
+          await persistInvocationFailure({
+            input,
+            proposal,
+            provider,
+            toolSequence,
+            error,
+            status: "FAILED",
+          });
+          publishTool(input, {
+            toolCallId: proposal.id,
+            toolName: proposal.name,
+            status: "FAILED",
+            errorMessage: error.message,
+          });
+          return {
+            index,
+            aborted: error,
+            block: resultBlock(proposal, undefined, error.message),
+          };
+        }
         await input.deps.store.upsertToolInvocation({
           run: input.run,
           toolCallId: proposal.id,
@@ -426,6 +467,13 @@ async function executeProposals(input: {
             assets: result.assets,
           });
         }
+        const settled = await input.credits.settleTool({
+          run: input.run,
+          toolCallId: proposal.id,
+          toolInvocationId: saved.id,
+          toolName: proposal.name,
+          cost: result.creditCost,
+        });
         publishTool(input, {
           toolCallId: proposal.id,
           toolName: proposal.name,
@@ -453,6 +501,18 @@ async function executeProposals(input: {
             }),
           ),
         ];
+        if (settled.exhausted) {
+          batchAbort.abort();
+          return {
+            index,
+            aborted: new ToolError(
+              "CREDITS_INSUFFICIENT",
+              "Credits ran out during this turn. Earlier results were kept.",
+              { retryable: false },
+            ),
+            block: blocks,
+          };
+        }
         return { index, block: blocks };
       } catch (error) {
         const cancelled = input.deps.signal.aborted || batchAbort.signal.aborted || isCancelled(error);
@@ -649,6 +709,19 @@ async function terminate(
     errorCode: extras.errorCode,
     errorMessage: extras.errorMessage,
   });
+  const credits = deps.credits ?? noopCredits;
+  let settledCredits: string | undefined;
+  try {
+    const finalized = await credits.finalizeRun({
+      run,
+      promptTokens: extras.promptTokens,
+      completionTokens: extras.completionTokens,
+      modelRouted: extras.modelRouted,
+    });
+    settledCredits = finalized.settledCredits;
+  } catch {
+    settledCredits = undefined;
+  }
   await deps.store.updateRun({
     runId: run.id,
     chatId: run.chatId,
@@ -659,6 +732,7 @@ async function terminate(
     promptTokens: extras.promptTokens,
     completionTokens: extras.completionTokens,
     thinkingDurationMs: Date.now() - extras.thinkingStartedAt.getTime(),
+    settledCredits,
     errorCode: extras.errorCode ?? null,
     errorMessage: extras.errorMessage ?? null,
     completedAt: new Date(),
@@ -897,16 +971,22 @@ async function estimateBatch(
   const tools: Array<{ name: string; credits: string }> = [];
   let total = new Prisma.Decimal(0);
   for (const proposal of proposals) {
-    let credits = "0";
-    try {
-      credits = await registry.estimateCredits(proposal.name, proposal.arguments);
-    } catch {
-      credits = "0";
-    }
-    tools.push({ name: proposal.name, credits });
+    const credits = await estimateOne(registry, proposal);
+    tools.push({ name: proposal.name, credits: credits.toString() });
     total = total.plus(credits);
   }
   return { tools, total };
+}
+
+async function estimateOne(
+  registry: ToolRegistry,
+  proposal: LlmToolCallProposal,
+): Promise<Prisma.Decimal> {
+  try {
+    return new Prisma.Decimal(await registry.estimateCredits(proposal.name, proposal.arguments));
+  } catch {
+    return new Prisma.Decimal(0);
+  }
 }
 
 function remainingReserved(reserved: string, spent: Prisma.Decimal): Prisma.Decimal {

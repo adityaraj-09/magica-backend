@@ -32,6 +32,7 @@ const run: RunSnapshot = {
   status: "QUEUED",
   triggerRunId: null,
   reservedCredits: "10",
+  settledCredits: "0",
 };
 
 function completion(partial: Partial<ChatCompletionResult>): ChatCompletionResult {
@@ -134,6 +135,20 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
       publish: vi.fn(),
       appendText: vi.fn(async () => undefined),
       flush: vi.fn(async () => undefined),
+    },
+    credits: {
+      spendable: vi.fn(async () => new Prisma.Decimal("1000000")),
+      settleTool: vi.fn(async () => ({
+        replayed: false,
+        exhausted: false,
+        charged: "0",
+        settledCredits: "0",
+      })),
+      finalizeRun: vi.fn(async () => ({
+        replayed: false,
+        refunded: "10",
+        settledCredits: "0",
+      })),
     },
     maxTurns: 4,
     waitTimeout: "1m",
@@ -504,6 +519,104 @@ describe("runAgentLoop", () => {
         payload: expect.objectContaining({
           assets: [expect.objectContaining({ url: "https://cdn.example/out.png" })],
         }),
+      }),
+    );
+  });
+
+  it("finalizes credits on a completed turn", async () => {
+    const llm: ChatClient = {
+      complete: vi.fn(async () => completion({ text: "hello there", finishReason: "stop" })),
+    };
+    const deps = createDeps(llm);
+    await runAgentLoop(turn, deps);
+    expect(deps.credits?.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        run: expect.objectContaining({ id: ids.runId }),
+        promptTokens: 3,
+        completionTokens: 2,
+      }),
+    );
+  });
+
+  it("keeps a successful tool result when credits run out mid-turn", async () => {
+    const llm: ChatClient = {
+      complete: vi.fn(async () =>
+        completion({
+          finishReason: "tool_calls",
+          toolCalls: [skillCall()],
+        }),
+      ),
+    };
+    const deps = createDeps(llm, {
+      credits: {
+        spendable: vi.fn(async () => new Prisma.Decimal("1000000")),
+        settleTool: vi.fn(async () => ({
+          replayed: false,
+          exhausted: true,
+          charged: "10",
+          settledCredits: "50",
+        })),
+        finalizeRun: vi.fn(async () => ({
+          replayed: false,
+          refunded: "0",
+          settledCredits: "50",
+        })),
+      },
+    });
+    const result = await runAgentLoop(turn, deps);
+    expect(result.status).toBe("FAILED");
+    expect(deps.store.saveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "CREDITS_INSUFFICIENT",
+        blocks: expect.arrayContaining([
+          expect.objectContaining({ type: "tool_result", output: expect.anything() }),
+        ]),
+      }),
+    );
+    expect(deps.credits?.finalizeRun).toHaveBeenCalled();
+    expect(llm.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not execute a tool when the estimate exceeds spendable credits", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.loadSkill,
+      description: "Load a skill",
+      provider: "SKILL",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "skill",
+      input: loadSkillInputSchema,
+      output: loadSkillOutputSchema,
+      estimateCredits: () => "5",
+      execute: async () => {
+        throw new Error("should not run");
+      },
+    });
+    const llm: ChatClient = {
+      complete: vi.fn(async () =>
+        completion({ finishReason: "tool_calls", toolCalls: [skillCall()] }),
+      ),
+    };
+    const deps = createDeps(llm, {
+      registry,
+      credits: {
+        spendable: vi.fn(async () => new Prisma.Decimal("1")),
+        settleTool: vi.fn(),
+        finalizeRun: vi.fn(async () => ({
+          replayed: false,
+          refunded: "10",
+          settledCredits: "0",
+        })),
+      },
+    });
+    const result = await runAgentLoop(turn, deps);
+    expect(result.status).toBe("FAILED");
+    expect(deps.credits?.settleTool).not.toHaveBeenCalled();
+    expect(deps.store.upsertToolInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "FAILED",
+        errorCode: "CREDITS_INSUFFICIENT",
       }),
     );
   });
