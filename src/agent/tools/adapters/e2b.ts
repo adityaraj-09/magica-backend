@@ -114,7 +114,9 @@ export class E2BSandboxAdapter implements E2BAdapter {
       const destination = safeJoin(WORK_DIR, file.path);
       const bytes = await downloadBytes(file.url, signal);
       await sandbox.files.makeDir(path.posix.dirname(destination), { signal });
-      await sandbox.files.write(destination, new Blob([bytes]), { signal });
+      const payload = new Uint8Array(bytes.byteLength);
+      payload.set(bytes);
+      await sandbox.files.write(destination, payload.buffer, { signal });
     }
   }
 
