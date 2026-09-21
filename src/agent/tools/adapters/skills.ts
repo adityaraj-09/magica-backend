@@ -107,13 +107,45 @@ export class FilesystemSkillLoaderAdapter implements SkillLoaderAdapter {
   }
 }
 
-export async function createSkillLoaderAdapter(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<SkillLoaderAdapter> {
-  const roots = (env.SKILLS_DIR ?? "agent-skills")
+let cachedLoader: Promise<SkillLoaderAdapter> | undefined;
+let cachedRootsKey: string | undefined;
+
+function skillRoots(env: NodeJS.ProcessEnv): string[] {
+  return (env.SKILLS_DIR ?? "agent-skills")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-  const registry = await SkillRegistry.load(roots);
-  return new FilesystemSkillLoaderAdapter(registry);
+}
+
+function rootsKey(env: NodeJS.ProcessEnv): string {
+  return skillRoots(env).join("\0");
+}
+
+/**
+ * Process-wide SkillRegistry. Concurrent callers share one disk scan;
+ * a failed load is not cached so the next call can retry.
+ */
+export async function createSkillLoaderAdapter(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SkillLoaderAdapter> {
+  const key = rootsKey(env);
+  if (!cachedLoader || cachedRootsKey !== key) {
+    cachedRootsKey = key;
+    const pending = SkillRegistry.load(skillRoots(env))
+      .then((registry) => new FilesystemSkillLoaderAdapter(registry))
+      .catch((error: unknown) => {
+        if (cachedLoader === pending) {
+          cachedLoader = undefined;
+          cachedRootsKey = undefined;
+        }
+        throw error;
+      });
+    cachedLoader = pending;
+  }
+  return cachedLoader;
+}
+
+export function resetSkillLoaderAdapter(): void {
+  cachedLoader = undefined;
+  cachedRootsKey = undefined;
 }

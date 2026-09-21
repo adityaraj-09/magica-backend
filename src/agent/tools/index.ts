@@ -4,7 +4,11 @@ export { createToolRegistry } from "./catalog.js";
 export { createWebSearchAdapter, ExaWebSearchAdapter, StubWebSearchAdapter } from "./adapters/exa.js";
 export { createMagicaAdapter, MagicaApiAdapter } from "./adapters/magica.js";
 export { createE2BAdapter, E2BSandboxAdapter } from "./adapters/e2b.js";
-export { createSkillLoaderAdapter, FilesystemSkillLoaderAdapter } from "./adapters/skills.js";
+export {
+  createSkillLoaderAdapter,
+  FilesystemSkillLoaderAdapter,
+  resetSkillLoaderAdapter,
+} from "./adapters/skills.js";
 export { SkillRegistry } from "../skills/registry.js";
 export type {
   E2BAdapter,
