@@ -540,7 +540,8 @@ model WebhookEndpoint {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId     String   @db.Uuid
   url        String
-  secretHash String
+  /// HMAC-SHA256 signing secret. Shown once at create; never returned again.
+  signingSecret String @map("secretHash")
   /// Event names this endpoint is subscribed to.
   events     String[]
   isActive   Boolean  @default(true)

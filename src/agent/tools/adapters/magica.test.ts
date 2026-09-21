@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolError } from "../errors.js";
+import { gptImage2InputSchema } from "../schemas.js";
 import type { ToolExecutionContext } from "../types.js";
 import { MagicaApiAdapter } from "./magica.js";
 
@@ -27,6 +28,30 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+function magicaCompleteFetch(resultUrl: string, options: { video?: boolean } = {}) {
+  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes("/schema")) {
+      return json(200, {
+        fields: options.video
+          ? [{ name: "video_urls" }, { name: "transition" }]
+          : [{ name: "image_url" }, { name: "prompt" }],
+      });
+    }
+    if (method === "POST" && url.includes("/run")) {
+      return json(202, { runId: "magica_ok" });
+    }
+    return json(200, {
+      id: "magica_ok",
+      status: "COMPLETED",
+      createdAt: new Date().toISOString(),
+      creditUsed: 1_000_000,
+      output: options.video ? { video_url: resultUrl } : { image_url: resultUrl },
+    });
+  });
+}
+
 function adapter() {
   return new MagicaApiAdapter({
     apiKey: "test-key",
@@ -43,6 +68,68 @@ function ctx(signal = new AbortController().signal): ToolExecutionContext {
 describe("MagicaApiAdapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("completes crop_image and returns a generated image asset", async () => {
+    vi.stubGlobal("fetch", magicaCompleteFetch("https://cdn.magica.test/crop.png"));
+    const result = await adapter().cropImage(cropInput, ctx());
+    expect(result.output).toEqual({ image_url: "https://cdn.magica.test/crop.png" });
+    expect(result.assets).toEqual([
+      expect.objectContaining({
+        url: "https://cdn.magica.test/crop.png",
+        mimeType: "image/png",
+      }),
+    ]);
+    expect(result.creditCost).toBe("1.000000");
+  });
+
+  it("completes gpt_image_2 text generation", async () => {
+    vi.stubGlobal("fetch", magicaCompleteFetch("https://cdn.magica.test/gen.png"));
+    const result = await adapter().gptImage2(
+      gptImage2InputSchema.parse({ prompt: "a red square on white" }),
+      ctx(),
+    );
+    expect(result.output).toMatchObject({
+      image_url: "https://cdn.magica.test/gen.png",
+      mode: "gpt-image-2-text",
+    });
+  });
+
+  it("completes merge_videos", async () => {
+    vi.stubGlobal(
+      "fetch",
+      magicaCompleteFetch("https://cdn.magica.test/merged.mp4", { video: true }),
+    );
+    const result = await adapter().mergeVideos(
+      {
+        video_urls: ["https://cdn.example/a.mp4", "https://cdn.example/b.mp4"],
+        transition: "fade",
+      },
+      ctx(),
+    );
+    expect(result.output).toEqual({ video_url: "https://cdn.magica.test/merged.mp4" });
+    expect(result.assets?.[0]?.mimeType).toBe("video/mp4");
+  });
+
+  it("chains gpt_image_2 into crop_image", async () => {
+    const magica = adapter();
+    vi.stubGlobal("fetch", magicaCompleteFetch("https://cdn.magica.test/gen.png"));
+    const generated = await magica.gptImage2(
+      gptImage2InputSchema.parse({ prompt: "a blue circle" }),
+      ctx(),
+    );
+    vi.stubGlobal("fetch", magicaCompleteFetch("https://cdn.magica.test/crop.png"));
+    const cropped = await magica.cropImage(
+      {
+        image_url: generated.output.image_url,
+        x_percent: 10,
+        y_percent: 10,
+        width_percent: 80,
+        height_percent: 80,
+      },
+      ctx(),
+    );
+    expect(cropped.output.image_url).toBe("https://cdn.magica.test/crop.png");
   });
 
   it("maps 401 to UNAUTHORIZED", async () => {

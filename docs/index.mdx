@@ -1,0 +1,28 @@
+---
+title: Galaxy Agent API
+description: Versioned REST for chats, Magica tools, run status, and signed webhooks.
+---
+
+The public API lives under `/api/v1`. Session-cookie Clerk routes (`/api/chats`, `/api/me`, …) stay for the product UI. External integrations should use API keys.
+
+## Base URL
+
+```
+https://<your-backend>/api/v1
+```
+
+## What you can do
+
+| Action | Method | Path |
+| --- | --- | --- |
+| List / create chats | GET, POST | `/chats` |
+| Get / delete a chat | GET, DELETE | `/chats/{chatId}` |
+| Read messages | GET | `/chats/{chatId}/messages` |
+| Send a turn | POST | `/chats/{chatId}/messages` |
+| Chat-style completion | POST | `/chats/{chatId}/completions` or `/completions` |
+| Run status | GET | `/chats/{chatId}/runs/{runId}` |
+| Magica Crop Image | POST | `/tools/crop_image` |
+| Magica GPT Image 2 | POST | `/tools/gpt_image_2` |
+| Magica Merge Videos | POST | `/tools/merge_videos` |
+
+Sends and completions return quickly with `{ chatId, messageId, runId, status: "queued" }`. Poll run status until `COMPLETE`, `FAILED`, or `CANCELLED`. Magica tool routes wait on the provider and return the result in the same HTTP call (up to 5 minutes).

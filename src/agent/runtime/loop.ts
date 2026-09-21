@@ -21,6 +21,7 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint.js";
 import { noopCredits, type CreditGateway } from "@/server/credits/settle.js";
 import { noopAssets, type AssetGateway } from "@/server/storage/copy.js";
+import { noopWebhooks, type WebhookGateway } from "@/server/public/webhooks.js";
 
 export type AgentTurnInput = {
   chatId: string;
@@ -42,6 +43,7 @@ export type AgentLoopDeps = {
   realtime?: RealtimePublisher;
   credits?: CreditGateway;
   assets?: AssetGateway;
+  webhooks?: WebhookGateway;
   maxTurns: number;
   waitTimeout: string;
   signal: AbortSignal;
@@ -494,6 +496,27 @@ async function executeProposals(input: {
           toolName: proposal.name,
           status: "SUCCESS",
         });
+        void (input.deps.webhooks ?? noopWebhooks)
+          .emit({
+            userId: input.run.userId,
+            event: "tool.completed",
+            agentRunId: input.run.id,
+            toolInvocationId: saved.id,
+            idempotencySuffix: proposal.id,
+            payload: {
+              chatId: input.run.chatId,
+              runId: input.run.id,
+              messageId: input.assistantMessageId,
+              traceId: input.traceId,
+              toolCallId: proposal.id,
+              toolName: proposal.name,
+              output: result.output,
+              assets,
+              creditCost: result.creditCost,
+              durationMs: result.durationMs,
+            },
+          })
+          .catch(() => undefined);
         const blocks: ContentBlock[] = [
           {
             type: "tool_use",

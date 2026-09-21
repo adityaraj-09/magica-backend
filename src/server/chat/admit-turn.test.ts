@@ -14,9 +14,11 @@ const {
   runFindFirst,
   runCreate,
   runUpdate,
+  runCount,
   userFindUniqueOrThrow,
   userUpdate,
   ledgerCreate,
+  attachmentFindMany,
 } = vi.hoisted(() => ({
   dispatchAgentTurn: vi.fn(),
   createRunRealtimeToken: vi.fn(),
@@ -29,9 +31,11 @@ const {
   runFindFirst: vi.fn(),
   runCreate: vi.fn(),
   runUpdate: vi.fn(),
+  runCount: vi.fn(),
   userFindUniqueOrThrow: vi.fn(),
   userUpdate: vi.fn(),
   ledgerCreate: vi.fn(),
+  attachmentFindMany: vi.fn(),
 }));
 
 vi.mock("@/server/jobs/dispatch.js", () => ({ dispatchAgentTurn }));
@@ -66,9 +70,10 @@ function tx() {
   return {
     chat: { findUnique: chatFindUnique, create: chatCreate, update: chatUpdate },
     message: { findUnique: messageFindUnique, create: messageCreate },
-    agentRun: { findFirst: runFindFirst, create: runCreate },
+    agentRun: { findFirst: runFindFirst, create: runCreate, count: runCount },
     user: { findUniqueOrThrow: userFindUniqueOrThrow, update: userUpdate },
     creditLedger: { create: ledgerCreate },
+    attachment: { findMany: attachmentFindMany },
   };
 }
 
@@ -76,9 +81,12 @@ describe("admitTurn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CREDIT_RESERVE_TURN = "10";
+    process.env.SEND_RATE_LIMIT_PER_MINUTE = "20";
     transaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(tx()));
     chatFindUnique.mockResolvedValue({ id: ids.chatId, userId: ids.userId, deletedAt: null });
     runFindFirst.mockResolvedValue(null);
+    runCount.mockResolvedValue(0);
+    attachmentFindMany.mockResolvedValue([]);
     userFindUniqueOrThrow.mockResolvedValue({ creditBalance: new Prisma.Decimal("100") });
     messageCreate.mockResolvedValue({ id: ids.messageId });
     runCreate.mockResolvedValue({ id: ids.runId });
@@ -121,6 +129,106 @@ describe("admitTurn", () => {
     ).rejects.toMatchObject({ status: 409, code: "RUN_ACTIVE" });
     expect(messageCreate).not.toHaveBeenCalled();
     expect(ledgerCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the send rate limit is exceeded", async () => {
+    process.env.SEND_RATE_LIMIT_PER_MINUTE = "2";
+    runCount.mockResolvedValue(2);
+    await expect(
+      admitTurn({ user, chatId: ids.chatId, body: { text: "hello" } }),
+    ).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+      details: { retryAfter: 60 },
+    });
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(dispatchAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not rate-limit a duplicate clientMessageId replay", async () => {
+    process.env.SEND_RATE_LIMIT_PER_MINUTE = "1";
+    runCount.mockResolvedValue(8);
+    messageFindUnique.mockResolvedValue({
+      id: ids.messageId,
+      triggeredRun: {
+        id: ids.runId,
+        traceId: "trace_existing",
+        triggerRunId: "run_trigger",
+      },
+    });
+    const result = await admitTurn({
+      user,
+      chatId: ids.chatId,
+      body: { text: "hello", clientMessageId: ids.clientMessageId },
+    });
+    expect(result.replayed).toBe(true);
+    expect(runCount).not.toHaveBeenCalled();
+  });
+
+  it("links owned attachments in send order and writes asset blocks", async () => {
+    const libraryId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    const directId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    attachmentFindMany.mockResolvedValue([
+      {
+        id: libraryId,
+        chatId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        filename: "lib.png",
+        mimeType: "image/png",
+        url: "https://cdn.example/lib.png",
+        status: "COMPLETE",
+        expiresAt: null,
+      },
+      {
+        id: directId,
+        chatId: ids.chatId,
+        filename: "shot.png",
+        mimeType: "image/png",
+        url: "https://cdn.example/shot.png",
+        status: "COMPLETE",
+        expiresAt: null,
+      },
+    ]);
+    await admitTurn({
+      user,
+      chatId: ids.chatId,
+      body: { text: "crop this", attachmentIds: [libraryId, directId] },
+    });
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          searchText: "crop this",
+          contentBlocks: [
+            { type: "text", text: "crop this" },
+            {
+              type: "asset",
+              url: "https://cdn.example/lib.png",
+              mimeType: "image/png",
+              filename: "lib.png",
+            },
+            {
+              type: "asset",
+              url: "https://cdn.example/shot.png",
+              mimeType: "image/png",
+              filename: "shot.png",
+            },
+          ],
+          attachments: {
+            create: [
+              expect.objectContaining({
+                attachmentId: libraryId,
+                source: "MEDIA_LIBRARY",
+                sortOrder: 0,
+              }),
+              expect.objectContaining({
+                attachmentId: directId,
+                source: "DIRECT_UPLOAD",
+                sortOrder: 1,
+              }),
+            ],
+          },
+        }),
+      }),
+    );
   });
 
   it("rejects when the user cannot cover the reserve", async () => {

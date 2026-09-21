@@ -12,6 +12,7 @@ import { createTriggerRealtime } from "./realtime.js";
 import { createTriggerWaitpoints } from "./waitpoints.js";
 import { createCreditGateway } from "@/server/credits/settle.js";
 import { createAssetGateway } from "@/server/storage/copy.js";
+import { createWebhookGateway } from "@/server/public/webhooks.js";
 
 /**
  * One durable agent turn. Trigger with:
@@ -36,48 +37,100 @@ export const orchestrateAgentTurn = schemaTask({
 
     const { registry, skills } = await createAgentRuntime();
     const store = new AgentStore(prisma);
-    const result = await runAgentLoop(
-      {
-        ...payload,
-        triggerRunId: ctx.run.id,
-      },
-      {
-        store,
-        llm: createOpenRouterClient(),
-        registry,
-        skills: skills.listMetadata(),
-        children: triggerChildTasks,
-        waitpoints: createTriggerWaitpoints(store),
-        realtime: createTriggerRealtime(),
-        credits: createCreditGateway(prisma),
-        assets: createAssetGateway(),
-        maxTurns: parsePositiveInt(process.env.AGENT_MAX_TURNS, 8),
-        waitTimeout: process.env.WAITPOINT_TIMEOUT ?? "24h",
-        signal,
-      },
-    );
-
-    logger.info("Agent turn finished", {
-      chatId: payload.chatId,
+    const webhooks = createWebhookGateway(prisma);
+    await webhooks.emit({
       userId: payload.userId,
-      runId: payload.runId,
-      messageId: payload.messageId,
-      traceId: payload.traceId,
-      processId: ctx.run.id,
-      status: result.status,
-      assistantMessageId: result.assistantMessageId,
+      event: "agent.started",
+      agentRunId: payload.runId,
+      idempotencySuffix: payload.runId,
+      payload: {
+        chatId: payload.chatId,
+        runId: payload.runId,
+        messageId: payload.messageId,
+        traceId: payload.traceId,
+        processId: ctx.run.id,
+        status: "QUEUED",
+      },
     });
 
-    return {
-      ok: true as const,
-      ...result,
-      chatId: payload.chatId,
-      userId: payload.userId,
-      runId: payload.runId,
-      messageId: payload.messageId,
-      traceId: payload.traceId,
-      triggerRunId: ctx.run.id,
-    };
+    try {
+      const result = await runAgentLoop(
+        {
+          ...payload,
+          triggerRunId: ctx.run.id,
+        },
+        {
+          store,
+          llm: createOpenRouterClient(),
+          registry,
+          skills: skills.listMetadata(),
+          children: triggerChildTasks,
+          waitpoints: createTriggerWaitpoints(store),
+          realtime: createTriggerRealtime(),
+          credits: createCreditGateway(prisma),
+          assets: createAssetGateway(),
+          webhooks,
+          maxTurns: parsePositiveInt(process.env.AGENT_MAX_TURNS, 8),
+          waitTimeout: process.env.WAITPOINT_TIMEOUT ?? "24h",
+          signal,
+        },
+      );
+
+      await webhooks.emit({
+        userId: payload.userId,
+        event: result.status === "COMPLETE" ? "agent.completed" : "agent.failed",
+        agentRunId: payload.runId,
+        idempotencySuffix: `${payload.runId}:${result.status}`,
+        payload: {
+          chatId: payload.chatId,
+          runId: payload.runId,
+          messageId: payload.messageId,
+          traceId: payload.traceId,
+          processId: ctx.run.id,
+          status: result.status,
+          assistantMessageId: result.assistantMessageId,
+        },
+      });
+
+      logger.info("Agent turn finished", {
+        chatId: payload.chatId,
+        userId: payload.userId,
+        runId: payload.runId,
+        messageId: payload.messageId,
+        traceId: payload.traceId,
+        processId: ctx.run.id,
+        status: result.status,
+        assistantMessageId: result.assistantMessageId,
+      });
+
+      return {
+        ok: true as const,
+        ...result,
+        chatId: payload.chatId,
+        userId: payload.userId,
+        runId: payload.runId,
+        messageId: payload.messageId,
+        traceId: payload.traceId,
+        triggerRunId: ctx.run.id,
+      };
+    } catch (error) {
+      await webhooks.emit({
+        userId: payload.userId,
+        event: "agent.failed",
+        agentRunId: payload.runId,
+        idempotencySuffix: `${payload.runId}:THROWN`,
+        payload: {
+          chatId: payload.chatId,
+          runId: payload.runId,
+          messageId: payload.messageId,
+          traceId: payload.traceId,
+          processId: ctx.run.id,
+          status: "FAILED",
+          error: error instanceof Error ? error.message : "Agent turn failed",
+        },
+      });
+      throw error;
+    }
   },
 });
 

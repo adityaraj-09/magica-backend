@@ -1,0 +1,39 @@
+---
+title: Messages and completions
+description: Send a durable agent turn or a chat-style completion.
+---
+
+## POST `/api/v1/chats/{chatId}/messages`
+
+```json
+{
+  "text": "Crop the attached photo",
+  "clientMessageId": "11111111-1111-1111-1111-111111111111",
+  "planMode": false,
+  "attachmentIds": []
+}
+```
+
+Returns `201` (or `200` on `clientMessageId` replay):
+
+```json
+{
+  "chatId": "...",
+  "messageId": "...",
+  "runId": "...",
+  "triggerRunId": "...",
+  "status": "queued"
+}
+```
+
+## POST `/api/v1/chats/{chatId}/completions`
+
+Same admission as send. Body may use `text`, `prompt`, or OpenAI-style `messages` (last `user` content). Returns `202`.
+
+## POST `/api/v1/completions`
+
+Creates a chat when `chatId` is omitted, then admits the turn.
+
+## GET `/api/v1/chats/{chatId}/messages`
+
+Newest messages first with `limit` + `cursor`. Includes content blocks and attachments.

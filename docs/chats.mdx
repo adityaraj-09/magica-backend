@@ -1,0 +1,20 @@
+---
+title: Chats
+description: Create, list, read, and delete conversations.
+---
+
+## POST `/api/v1/chats`
+
+```json
+{ "title": "Launch plan" }
+```
+
+## GET `/api/v1/chats`
+
+Cursor pagination: `limit` (1–50), `cursor`, optional `q` and `favorite=true`. Newest first on `(createdAt, id)`.
+
+## GET `/api/v1/chats/{chatId}`
+
+## DELETE `/api/v1/chats/{chatId}`
+
+Soft-deletes. Another user's id returns `404 CHAT_NOT_FOUND`.

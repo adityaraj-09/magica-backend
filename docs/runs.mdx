@@ -1,0 +1,12 @@
+---
+title: Runs
+description: Poll the durable agent turn. Postgres is the source of truth.
+---
+
+## GET `/api/v1/chats/{chatId}/runs/{runId}`
+
+Returns status (`QUEUED` → `THINKING` → `WORKING` → `WAITING` / `STOPPING` / `COMPLETE` / `FAILED` / `CANCELLED`), current step, tools, waitpoint overlay, and the assistant message so far.
+
+Poll this after send/completion. Realtime tokens are a product-UI concern and are not minted on the public snapshot.
+
+Timed-out waitpoints are expired on read so a stale overlay does not stick.

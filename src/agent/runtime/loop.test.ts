@@ -7,6 +7,8 @@ import { ToolRegistry } from "@/agent/tools/registry.js";
 import {
   cropImageInputSchema,
   cropImageOutputSchema,
+  gptImage2InputSchema,
+  gptImage2OutputSchema,
   loadSkillInputSchema,
   loadSkillOutputSchema,
 } from "@/agent/tools/schemas.js";
@@ -649,5 +651,100 @@ describe("runAgentLoop", () => {
         errorCode: "CREDITS_INSUFFICIENT",
       }),
     );
+  });
+
+  it("chains GPT Image 2 into Crop Image in one conversation", async () => {
+    const generatedUrl = "https://cdn.magica.test/gen.png";
+    const croppedUrl = "https://cdn.magica.test/crop.png";
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.gptImage2,
+      description: "Generate",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: gptImage2InputSchema,
+      output: gptImage2OutputSchema,
+      estimateCredits: () => "0",
+      execute: async () => ({
+        output: { image_url: generatedUrl, mode: "gpt-image-2-text" as const },
+        creditCost: "0",
+        durationMs: 4,
+        assets: [{ url: generatedUrl, mimeType: "image/png" }],
+      }),
+    });
+    registry.register({
+      name: TOOL_NAMES.cropImage,
+      description: "Crop",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: cropImageInputSchema,
+      output: cropImageOutputSchema,
+      estimateCredits: () => "0",
+      execute: async (input) => {
+        expect(input.image_url).toBe(generatedUrl);
+        return {
+          output: { image_url: croppedUrl },
+          creditCost: "0",
+          durationMs: 3,
+          assets: [{ url: croppedUrl, mimeType: "image/png" }],
+        };
+      },
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "call_gen",
+                name: "gpt_image_2",
+                arguments: { prompt: "a blue circle" },
+                rawArguments: '{"prompt":"a blue circle"}',
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "call_crop",
+                name: "crop_image",
+                arguments: {
+                  image_url: generatedUrl,
+                  x_percent: 10,
+                  y_percent: 10,
+                  width_percent: 80,
+                  height_percent: 80,
+                },
+                rawArguments: "{}",
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "cropped the generated image", finishReason: "stop" })),
+    };
+    const awaitApproval = vi.fn(async () => "approved" as const);
+    const deps = createDeps(llm, { registry, waitpoints: { awaitApproval } });
+    const result = await runAgentLoop(turn, deps);
+    expect(result.status).toBe("COMPLETE");
+    expect(deps.store.saveGeneratedAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assets: [expect.objectContaining({ url: generatedUrl })],
+      }),
+    );
+    expect(deps.store.saveGeneratedAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assets: [expect.objectContaining({ url: croppedUrl })],
+      }),
+    );
+    expect(llm.complete).toHaveBeenCalledTimes(3);
   });
 });

@@ -1,0 +1,27 @@
+---
+title: Authentication
+description: Bearer API keys for /api/v1. Keys are shown once.
+---
+
+Create a key while signed in to the product:
+
+```bash
+POST /api/keys
+{ "name": "ci" }
+```
+
+Response includes `key` once (`gxk_live_…`). Store it; list endpoints only return `prefix`.
+
+Call the public API with:
+
+```
+Authorization: Bearer gxk_live_...
+```
+
+`/api/v1` is not behind Clerk. A missing, malformed, or revoked key returns `401 UNAUTHORIZED`.
+
+Revoke:
+
+```
+DELETE /api/keys/{keyId}
+```

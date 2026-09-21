@@ -199,7 +199,8 @@ export async function listMessages(input: {
     include: {
       attachments: {
         orderBy: { sortOrder: "asc" },
-        include: {
+        select: {
+          source: true,
           attachment: {
             select: {
               id: true,
@@ -241,6 +242,7 @@ export type MessageJson = {
   errorMessage: string | null;
   attachments: Array<{
     id: string;
+    source: string;
     filename: string;
     mimeType: string;
     byteSize: number;
@@ -265,6 +267,7 @@ function toMessageJson(row: {
   errorCode: string | null;
   errorMessage: string | null;
   attachments: Array<{
+    source: string;
     attachment: {
       id: string;
       filename: string;
@@ -292,6 +295,7 @@ function toMessageJson(row: {
     errorMessage: row.errorMessage,
     attachments: row.attachments.map((link) => ({
       id: link.attachment.id,
+      source: link.source,
       filename: link.attachment.filename,
       mimeType: link.attachment.mimeType,
       byteSize: link.attachment.byteSize,

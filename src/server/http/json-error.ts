@@ -8,13 +8,18 @@ export function jsonError(error: unknown): NextResponse {
     return NextResponse.json({ error: error.message }, { status: error.status });
   }
   if (error instanceof HttpError) {
+    const retryAfter = error.details?.retryAfter;
+    const headers =
+      typeof retryAfter === "number" || typeof retryAfter === "string"
+        ? { "Retry-After": String(retryAfter) }
+        : undefined;
     return NextResponse.json(
       {
         error: error.message,
         ...(error.code ? { code: error.code } : {}),
         ...(error.details ?? {}),
       },
-      { status: error.status },
+      { status: error.status, headers },
     );
   }
   if (error instanceof ZodError) {

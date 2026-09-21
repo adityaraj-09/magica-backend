@@ -1,10 +1,12 @@
 import { Prisma, type PrismaClient, type User } from "@prisma/client";
 import { z } from "zod";
 import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types.js";
-import { searchTextFromBlocks } from "@/agent/runtime/content-blocks.js";
+import { searchTextFromBlocks, type ContentBlock } from "@/agent/runtime/content-blocks.js";
 import { prisma } from "@/server/db.js";
 import { HttpError } from "@/server/http/errors.js";
+import { parseSendRateLimit, type SendRateLimit } from "@/server/http/rate-limit.js";
 import { parseTurnReserve, reserveIdempotencyKey } from "@/server/credits/reserve.js";
+import { resolveSendAttachments, sendAttachmentIdsSchema } from "@/server/chat/attachments.js";
 import { dispatchAgentTurn } from "@/server/jobs/dispatch.js";
 import { logInfo, logWarn, traceFields } from "@/server/log.js";
 import { createRunRealtimeToken } from "@/server/realtime/token.js";
@@ -13,6 +15,7 @@ export const sendMessageBodySchema = z.object({
   text: z.string().trim().min(1).max(8192),
   clientMessageId: z.string().uuid().optional(),
   planMode: z.boolean().optional(),
+  attachmentIds: sendAttachmentIdsSchema,
 });
 
 const chatIdSchema = z.string().uuid();
@@ -40,6 +43,7 @@ export async function admitTurn(input: {
   const body = sendMessageBodySchema.parse(input.body);
   const db = input.db ?? prisma;
   const reserve = parseTurnReserve(process.env.CREDIT_RESERVE_TURN);
+  const rateLimit = parseSendRateLimit(process.env);
 
   const persisted = await db.$transaction((tx) =>
     persistAdmission(tx, {
@@ -47,6 +51,7 @@ export async function admitTurn(input: {
       chatId,
       body,
       reserve,
+      rateLimit,
     }),
   );
 
@@ -127,6 +132,7 @@ async function persistAdmission(
     chatId: string;
     body: SendMessageBody;
     reserve: Prisma.Decimal;
+    rateLimit: SendRateLimit;
   },
 ): Promise<{
   chatId: string;
@@ -168,6 +174,21 @@ async function persistAdmission(
     throw new HttpError("A turn is already running in this chat", 409, "RUN_ACTIVE");
   }
 
+  const recentSends = await tx.agentRun.count({
+    where: {
+      userId: input.user.id,
+      createdAt: { gte: new Date(Date.now() - input.rateLimit.windowMs) },
+    },
+  });
+  if (recentSends >= input.rateLimit.limit) {
+    throw new HttpError(
+      "Too many sends. Wait before starting another turn.",
+      429,
+      "RATE_LIMITED",
+      { retryAfter: Math.ceil(input.rateLimit.windowMs / 1000) },
+    );
+  }
+
   const user = await tx.user.findUniqueOrThrow({
     where: { id: input.user.id },
     select: { creditBalance: true },
@@ -176,7 +197,23 @@ async function persistAdmission(
     throw new HttpError("Not enough credits to start a turn", 402, "CREDITS_INSUFFICIENT");
   }
 
-  const blocks = [{ type: "text" as const, text: input.body.text }];
+  const attached = await resolveSendAttachments({
+    userId: input.user.id,
+    chatId: chat.id,
+    attachmentIds: input.body.attachmentIds,
+    db: tx,
+  });
+  const blocks: ContentBlock[] = [
+    { type: "text", text: input.body.text },
+    ...attached.map(
+      (file): ContentBlock => ({
+        type: "asset",
+        url: file.url,
+        mimeType: file.mimeType,
+        filename: file.filename,
+      }),
+    ),
+  ];
   const message = await tx.message.create({
     data: {
       chatId: chat.id,
@@ -184,8 +221,18 @@ async function persistAdmission(
       clientMessageId: input.body.clientMessageId,
       role: "USER",
       status: "SUCCESS",
-      contentBlocks: blocks,
+      contentBlocks: blocks as Prisma.InputJsonValue,
       searchText: searchTextFromBlocks(blocks),
+      attachments: attached.length
+        ? {
+            create: attached.map((file, sortOrder) => ({
+              attachmentId: file.id,
+              chatId: chat.id,
+              source: file.source,
+              sortOrder,
+            })),
+          }
+        : undefined,
     },
     select: { id: true },
   });

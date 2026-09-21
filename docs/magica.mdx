@@ -1,0 +1,54 @@
+---
+title: Magica tools
+description: Direct Crop Image, GPT Image 2, and Merge Videos execution.
+---
+
+These routes call Magica end to end (not stubs). They block until the provider run completes.
+
+## POST `/api/v1/tools/crop_image`
+
+```json
+{
+  "image_url": "https://cdn.example/in.png",
+  "x_percent": 0,
+  "y_percent": 0,
+  "width_percent": 50,
+  "height_percent": 50
+}
+```
+
+Pixel `x/y/width/height` or `crop.{x,y,width,height}` are also accepted. Provide exactly one complete rectangle.
+
+## POST `/api/v1/tools/gpt_image_2`
+
+```json
+{ "prompt": "a red square on white" }
+```
+
+Add `image_url` to run edit mode (`gpt-image-2-edit`).
+
+## POST `/api/v1/tools/merge_videos`
+
+```json
+{
+  "video_urls": ["https://cdn.example/a.mp4", "https://cdn.example/b.mp4"],
+  "transition": "fade"
+}
+```
+
+`transition` is `none` | `fade` | `dissolve`.
+
+## Response
+
+```json
+{
+  "toolName": "crop_image",
+  "output": { "image_url": "https://..." },
+  "assets": [{ "url": "https://...", "mimeType": "image/png" }],
+  "creditCost": "0",
+  "providerRunId": "...",
+  "durationMs": 1200
+}
+```
+
+Result URLs are copied to R2/S3 when object storage is configured. `tool.completed` webhooks fire after a successful public tool call.

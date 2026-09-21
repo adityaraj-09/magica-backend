@@ -1,0 +1,61 @@
+---
+title: Webhooks
+description: Signed outbound events for agent and tool lifecycle.
+---
+
+Register an HTTPS endpoint while signed in:
+
+```bash
+POST /api/webhook-endpoints
+{
+  "url": "https://example.com/galaxy-hooks",
+  "events": ["agent.started", "agent.completed", "agent.failed", "tool.completed"]
+}
+```
+
+The response includes `secret` once (`gwhsec_…`). List endpoints never return it.
+
+## Events
+
+| Event | When |
+| --- | --- |
+| `agent.started` | Orchestrator begins a turn |
+| `agent.completed` | Turn finished `COMPLETE` |
+| `agent.failed` | Turn finished `FAILED` / `CANCELLED`, or the task threw |
+| `tool.completed` | A tool (agent loop or public Magica route) succeeded |
+
+## Envelope
+
+```json
+{
+  "id": "wh:{endpointId}:{event}:{idempotency}",
+  "event": "agent.completed",
+  "createdAt": "2026-09-21T12:00:00.000Z",
+  "data": {
+    "chatId": "...",
+    "runId": "...",
+    "messageId": "...",
+    "traceId": "...",
+    "status": "COMPLETE"
+  }
+}
+```
+
+## Signature
+
+Headers:
+
+- `X-Galaxy-Signature`: `sha256=<hex>`
+- `X-Galaxy-Timestamp`: unix seconds
+- `X-Galaxy-Event`
+- `X-Galaxy-Delivery-Id`
+
+Verify:
+
+```
+HMAC_SHA256(secret, `${timestamp}.${rawBody}`)
+```
+
+Compare to the hex after `sha256=` with a constant-time check. Replay-safe: deliveries use a unique idempotency key per endpoint+event+run (or tool call). Duplicate emits are not posted twice.
+
+Timeouts and non-2xx responses mark the delivery `FAILED` and never fail the agent turn.
