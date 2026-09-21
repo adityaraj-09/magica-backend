@@ -1,0 +1,577 @@
+// =============================================================================
+// Galaxy Agent Chat — PostgreSQL schema (Prisma)
+// =============================================================================
+// Compatibility
+//   - PostgreSQL 16+ (gen_random_uuid, JSONB, partial unique indexes)
+//   - Prisma 6.x, provider = postgresql
+//   - Clerk owns identity; User.clerkUserId is the join key, not a FK
+//   - JSONB is ONLY used for Zod-validated payloads (content blocks, tool
+//     input/output, waitpoint payloads). Core fields are relational.
+//
+// Forward / rollback
+//   - Forward: apply SQL in prisma/sql/0001_constraints.sql AFTER the first
+//     Prisma migrate (partial unique indexes cannot be expressed in Prisma).
+//   - Rollback: drop those indexes first, then `prisma migrate down`. Never
+//     drop CreditLedger or Message rows in place — tombstone via status /
+//     deletedAt. Adding a tool/skill MUST NOT require a schema change.
+//
+// Scale assumptions
+//   - Cursor pagination uses (createdAt, id) / (lastMessageAt, id), never OFFSET.
+//   - One active AgentRun per Chat is enforced by a partial unique index.
+//   - Idempotency keys make dispatch, tool completion, approvals, and charges
+//     safe under retry, reconnect, and duplicate submit.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum MessageStatus {
+  PENDING
+  STREAMING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum AgentRunStatus {
+  QUEUED
+  THINKING
+  WORKING
+  WAITING
+  STOPPING
+  COMPLETE
+  FAILED
+  CANCELLED
+}
+
+enum AttachmentOrigin {
+  UPLOAD
+  LIBRARY
+  GENERATED
+}
+
+enum AttachmentStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  COMPLETE
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum MessageAttachmentSource {
+  DIRECT_UPLOAD
+  MEDIA_LIBRARY
+}
+
+enum ToolProvider {
+  MAGICA
+  E2B
+  SKILL
+  INTERNAL
+}
+
+enum ToolInvocationStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum WaitpointType {
+  OPTIONS
+  PLAN
+  CREDIT
+  MEDIA
+}
+
+enum WaitpointStatus {
+  WAITING
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum CreditEntryType {
+  GRANT
+  RESERVE
+  SETTLE
+  REFUND
+  ADJUST
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// -----------------------------------------------------------------------------
+// Identity
+// -----------------------------------------------------------------------------
+
+/// Local projection of a Clerk user. Credit balance is a cached rollup;
+/// CreditLedger is the source of truth.
+model User {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkUserId   String   @unique
+  email         String
+  creditBalance Decimal  @default(0) @db.Decimal(18, 6)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chats             Chat[]
+  messages          Message[]
+  agentRuns         AgentRun[]
+  attachments       Attachment[]
+  toolInvocations   ToolInvocation[]
+  waitpoints        Waitpoint[]
+  creditLedger      CreditLedger[]
+  apiKeys           ApiKey[]
+  webhookEndpoints  WebhookEndpoint[]
+
+  @@index([createdAt, id])
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// Chat
+// -----------------------------------------------------------------------------
+
+model Chat {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @db.Uuid
+  title         String    @default("New chat")
+  isFavorite    Boolean   @default(false)
+  lastMessageAt DateTime  @default(now())
+  lastMessageId String?   @db.Uuid
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  messages          Message[]
+  agentRuns         AgentRun[]
+  attachments       Attachment[]
+  messageAttachments MessageAttachment[]
+  toolInvocations   ToolInvocation[]
+  waitpoints        Waitpoint[]
+  creditLedger      CreditLedger[]
+
+  @@index([userId, lastMessageAt, id])
+  @@index([userId, isFavorite, lastMessageAt, id])
+  @@index([userId, deletedAt, lastMessageAt, id])
+  @@index([createdAt, id])
+  @@map("chats")
+}
+
+// -----------------------------------------------------------------------------
+// Message
+// -----------------------------------------------------------------------------
+
+/// One persisted chat message. Streaming content lives in `contentBlocks`
+/// (Zod-validated JSONB) and is reconciled to this row on every durable write.
+model Message {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  chatId           String        @db.Uuid
+  userId           String        @db.Uuid
+  agentRunId       String?       @db.Uuid
+  parentMessageId  String?       @db.Uuid
+  toolInvocationId String?       @unique @db.Uuid
+  /// Client-supplied id for optimistic send / duplicate POST protection.
+  clientMessageId  String?
+  role             MessageRole
+  status           MessageStatus @default(PENDING)
+  /// Zod-validated content blocks: text, thinking, tool_use, tool_result,
+  /// reasoning, citations, usage, generated assets. Ordering is preserved here.
+  contentBlocks    Json          @default("[]")
+  /// Flattened plain text for search; keep bounded (e.g. first 8 KB).
+  searchText       String        @default("") @db.VarChar(8192)
+  /// User-safe error. Never store provider secrets or raw stack traces.
+  errorCode        String?
+  errorMessage     String?
+  promptTokens     Int           @default(0)
+  completionTokens Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  chat           Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agentRun       AgentRun?        @relation("RunMessages", fields: [agentRunId], references: [id], onDelete: SetNull)
+  parentMessage  Message?         @relation("MessageThread", fields: [parentMessageId], references: [id], onDelete: SetNull)
+  childMessages  Message[]        @relation("MessageThread")
+  toolInvocation ToolInvocation?  @relation("ToolResultMessage", fields: [toolInvocationId], references: [id], onDelete: SetNull)
+  attachments    MessageAttachment[]
+  triggeredRun   AgentRun?        @relation("UserTurnRun")
+
+  @@unique([chatId, clientMessageId])
+  @@index([chatId, createdAt, id])
+  @@index([userId, createdAt, id])
+  @@index([agentRunId, createdAt, id])
+  @@index([parentMessageId])
+  @@map("messages")
+}
+
+// -----------------------------------------------------------------------------
+// Agent run (one durable turn)
+// -----------------------------------------------------------------------------
+
+model AgentRun {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  chatId String @db.Uuid
+  userId String @db.Uuid
+  /// The USER message that admitted this turn. One run per user message.
+  userMessageId String @unique @db.Uuid
+  /// HTTP / Trigger.dev dispatch key. Typically equal to userMessageId.
+  idempotencyKey String @unique
+
+  status AgentRunStatus @default(QUEUED)
+
+  /// Requested route must be openrouter/free; reject anything else at admission.
+  modelRequested String @default("openrouter/free")
+  /// Actual routed model id returned by OpenRouter (recorded, never guessed).
+  modelRouted    String?
+
+  triggerRunId String? @unique
+  traceId      String
+  processId    String?
+
+  currentStep      String?
+  progressPercent  Int?
+  thinkingStartedAt DateTime?
+  thinkingDurationMs Int?
+
+  promptTokens     Int @default(0)
+  completionTokens Int @default(0)
+
+  reservedCredits Decimal @default(0) @db.Decimal(18, 6)
+  settledCredits  Decimal @default(0) @db.Decimal(18, 6)
+
+  errorCode    String?
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  chat            Chat              @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userMessage     Message           @relation("UserTurnRun", fields: [userMessageId], references: [id], onDelete: Restrict)
+  messages        Message[]         @relation("RunMessages")
+  toolInvocations ToolInvocation[]
+  runSkills       RunSkill[]
+  waitpoints      Waitpoint[]
+  creditLedger    CreditLedger[]
+  webhookDeliveries WebhookDelivery[]
+
+  @@index([chatId, createdAt, id])
+  @@index([userId, createdAt, id])
+  @@index([status, createdAt, id])
+  @@index([triggerRunId])
+  @@index([traceId])
+  @@map("agent_runs")
+}
+
+// -----------------------------------------------------------------------------
+// Attachments (inbound Transloadit + outbound generated assets)
+// -----------------------------------------------------------------------------
+
+/// Canonical file/asset. Inbound = Transloadit Community uploads.
+/// Outbound = Magica result URLs or E2B artifacts copied to object storage.
+model Attachment {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @db.Uuid
+  chatId String? @db.Uuid
+  toolInvocationId String? @db.Uuid
+
+  origin AttachmentOrigin
+  status AttachmentStatus @default(PENDING)
+
+  filename   String
+  mimeType   String
+  byteSize   Int
+  checksum   String?
+  width      Int?
+  height     Int?
+  durationMs Int?
+
+  /// Durable object-storage key + public/signed URL. Magica-hosted result
+  /// URLs may live in `url` with storageKey null until copied.
+  storageKey String?
+  url        String?
+  thumbnailUrl String?
+
+  transloaditAssemblyId String?
+  transloaditFileId     String?
+  tusUploadId           String?
+
+  /// Community-plan temporary results expire; surface expiry in recovery UI.
+  expiresAt DateTime?
+
+  errorCode    String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chat           Chat?              @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  toolInvocation ToolInvocation?    @relation(fields: [toolInvocationId], references: [id], onDelete: SetNull)
+  messages       MessageAttachment[]
+
+  @@unique([transloaditAssemblyId, transloaditFileId])
+  @@index([userId, createdAt, id])
+  @@index([chatId, createdAt, id])
+  @@index([toolInvocationId])
+  @@index([status, createdAt])
+  @@index([transloaditAssemblyId])
+  @@map("attachments")
+}
+
+/// Ordered link between a message and an asset. Preserves direct-upload vs
+/// media-library order independently of when the file finished processing.
+model MessageAttachment {
+  id           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId    String                   @db.Uuid
+  attachmentId String                   @db.Uuid
+  chatId       String                   @db.Uuid
+  source       MessageAttachmentSource
+  sortOrder    Int
+  createdAt    DateTime                 @default(now())
+
+  message    Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
+  chat       Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, attachmentId])
+  @@unique([messageId, sortOrder])
+  @@index([chatId, createdAt, id])
+  @@map("message_attachments")
+}
+
+// -----------------------------------------------------------------------------
+// Tool invocations (Magica, E2B, skill loaders, internal)
+// -----------------------------------------------------------------------------
+
+model ToolInvocation {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentRunId String @db.Uuid
+  chatId     String @db.Uuid
+  userId     String @db.Uuid
+
+  /// Provider-neutral tool call id from the LLM. Charge-once / execute-once key.
+  toolCallId String
+  toolName   String
+  provider   ToolProvider
+  status     ToolInvocationStatus @default(PENDING)
+
+  /// Zod-validated, sanitized payloads. Never store API keys.
+  input  Json @default("{}")
+  output Json?
+
+  /// Magica runId, E2B sandbox id, etc.
+  providerRunId String?
+  sequence      Int
+  durationMs    Int?
+  creditCost    Decimal @default(0) @db.Decimal(18, 6)
+
+  errorCode    String?
+  errorMessage String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  agentRun   AgentRun    @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  resultMessage Message? @relation("ToolResultMessage")
+  attachments Attachment[]
+  creditLedger CreditLedger[]
+  webhookDeliveries WebhookDelivery[]
+
+  @@unique([agentRunId, toolCallId])
+  @@index([chatId, createdAt, id])
+  @@index([userId, createdAt, id])
+  @@index([provider, status, createdAt])
+  @@index([providerRunId])
+  @@index([agentRunId, sequence])
+  @@map("tool_invocations")
+}
+
+// -----------------------------------------------------------------------------
+// Skills loaded during a run (durable, deduped)
+// -----------------------------------------------------------------------------
+
+model RunSkill {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentRunId String   @db.Uuid
+  skillName  String
+  /// SHA-256 of the loaded SKILL.md (or asset). Resume/retry must reuse this.
+  contentHash String
+  /// Empty string = skill body via load_skill; relative path for assets.
+  /// Empty string (not null) so the unique index actually dedupes body loads.
+  assetPath  String   @default("")
+  createdAt  DateTime @default(now())
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+
+  @@unique([agentRunId, skillName, assetPath])
+  @@index([agentRunId, createdAt, id])
+  @@map("run_skills")
+}
+
+// -----------------------------------------------------------------------------
+// Human waitpoints
+// -----------------------------------------------------------------------------
+
+model Waitpoint {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agentRunId String @db.Uuid
+  chatId     String @db.Uuid
+  userId     String @db.Uuid
+
+  type WaitpointType
+  status WaitpointStatus @default(WAITING)
+
+  /// Trigger.dev waitpoint token id (`waitpoint_...`).
+  triggerWaitpointId String @unique
+  /// Scoped to this waitpoint; used to restore the overlay after reload.
+  publicAccessToken  String?
+  idempotencyKey     String @unique
+
+  /// Zod-validated prompt shown to the user (plan, options, cost, media).
+  payload Json @default("{}")
+  /// Zod-validated completion payload. Duplicate submits must no-op.
+  result  Json?
+
+  timeoutAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([agentRunId, createdAt, id])
+  @@index([chatId, status])
+  @@index([status, timeoutAt])
+  @@map("waitpoints")
+}
+
+// -----------------------------------------------------------------------------
+// Credits
+// -----------------------------------------------------------------------------
+
+/// Append-only ledger. Every reserve / settle / refund / grant is a row.
+/// `idempotencyKey` is the charge-once guarantee.
+model CreditLedger {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String          @db.Uuid
+  chatId           String?         @db.Uuid
+  agentRunId       String?         @db.Uuid
+  toolInvocationId String?         @db.Uuid
+  type             CreditEntryType
+  /// Signed amount in application credits. Negative = debit.
+  amount           Decimal         @db.Decimal(18, 6)
+  balanceAfter     Decimal         @db.Decimal(18, 6)
+  idempotencyKey   String          @unique
+  reason           String
+  createdAt        DateTime        @default(now())
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chat           Chat?            @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  agentRun       AgentRun?        @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  toolInvocation ToolInvocation?  @relation(fields: [toolInvocationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt, id])
+  @@index([agentRunId, createdAt, id])
+  @@index([toolInvocationId])
+  @@index([chatId, createdAt, id])
+  @@map("credit_ledger")
+}
+
+// -----------------------------------------------------------------------------
+// Public API (bonus)
+// -----------------------------------------------------------------------------
+
+model ApiKey {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @db.Uuid
+  name       String
+  prefix     String
+  hashedKey  String    @unique
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt, id])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @db.Uuid
+  url        String
+  secretHash String
+  /// Event names this endpoint is subscribed to.
+  events     String[]
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([userId, createdAt, id])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  endpointId       String                 @db.Uuid
+  agentRunId       String?                @db.Uuid
+  toolInvocationId String?                @db.Uuid
+  eventType        String
+  payload          Json
+  status           WebhookDeliveryStatus  @default(PENDING)
+  attempts         Int                    @default(0)
+  lastError        String?
+  idempotencyKey   String                 @unique
+  deliveredAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  endpoint       WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  agentRun       AgentRun?        @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  toolInvocation ToolInvocation?  @relation(fields: [toolInvocationId], references: [id], onDelete: SetNull)
+
+  @@index([endpointId, createdAt, id])
+  @@index([status, createdAt])
+  @@index([agentRunId])
+  @@map("webhook_deliveries")
+}

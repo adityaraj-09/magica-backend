@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Next.js
+.next/
+out/
+.vercel/
+
+# Build / transpile
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Prisma
+prisma/generated/
+src/generated/prisma/
+
+# Trigger.dev
+.trigger/
+
+# Logs & debug
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Tests
+playwright-report/
+test-results/
+.vitest/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+.cache/
+.tmp/
+tmp/
+*.local
