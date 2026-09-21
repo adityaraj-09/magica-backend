@@ -7,7 +7,7 @@ import {
 } from "@/agent/tools/schemas.js";
 import { TOOL_NAMES } from "@/agent/tools/types.js";
 import type { MagicaAdapter } from "@/agent/tools/adapters/types.js";
-import { withSignal } from "./context.js";
+import { childTrace, withSignal } from "./context.js";
 import { catchNonRetryableToolError } from "./errors.js";
 import { TASK_IDS } from "./ids.js";
 import { parseToolInput } from "./parse.js";
@@ -35,11 +35,7 @@ export const executeMagicaTool = schemaTask({
   schema: magicaToolPayloadSchema,
   catchError: catchNonRetryableToolError,
   run: async (payload, { signal }) => {
-    logger.info("Magica child started", {
-      toolName: payload.toolName,
-      toolCallId: payload.ctx.toolCallId,
-      runId: payload.ctx.runId,
-    });
+    logger.info("Magica child started", childTrace(payload.ctx, { toolName: payload.toolName }));
     const ctx = withSignal(payload.ctx, signal);
     const adapter = getMagica();
 

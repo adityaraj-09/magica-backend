@@ -283,6 +283,7 @@ export class AgentStore {
     toolInvocationId: string;
     assets: GeneratedAsset[];
   }): Promise<void> {
+    const ephemeralExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     for (const asset of input.assets) {
       await this.prisma.attachment.create({
         data: {
@@ -293,10 +294,12 @@ export class AgentStore {
           status: "COMPLETE",
           filename: asset.filename ?? asset.url.split("/").pop() ?? "generated",
           mimeType: asset.mimeType,
-          byteSize: 0,
+          byteSize: asset.byteSize ?? 0,
+          storageKey: asset.storageKey,
           url: asset.url,
           width: asset.width,
           height: asset.height,
+          expiresAt: asset.storageKey ? null : ephemeralExpiresAt,
         },
       });
     }

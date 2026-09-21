@@ -2,7 +2,7 @@ import { logger, schemaTask } from "@trigger.dev/sdk";
 import { createE2BAdapter } from "@/agent/tools/adapters/e2b.js";
 import { sandboxRunCodeInputSchema } from "@/agent/tools/schemas.js";
 import type { E2BAdapter } from "@/agent/tools/adapters/types.js";
-import { withSignal } from "./context.js";
+import { childTrace, withSignal } from "./context.js";
 import { catchNonRetryableToolError } from "./errors.js";
 import { TASK_IDS } from "./ids.js";
 import { parseToolInput } from "./parse.js";
@@ -30,10 +30,7 @@ export const executeE2BSandbox = schemaTask({
   schema: e2bSandboxPayloadSchema,
   catchError: catchNonRetryableToolError,
   run: async (payload, { signal }) => {
-    logger.info("E2B child started", {
-      toolCallId: payload.ctx.toolCallId,
-      runId: payload.ctx.runId,
-    });
+    logger.info("E2B child started", childTrace(payload.ctx, { toolName: payload.toolName }));
     return getE2B().runCode(
       parseToolInput(sandboxRunCodeInputSchema, payload.input),
       withSignal(payload.ctx, signal),

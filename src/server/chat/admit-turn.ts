@@ -6,6 +6,7 @@ import { prisma } from "@/server/db.js";
 import { HttpError } from "@/server/http/errors.js";
 import { parseTurnReserve, reserveIdempotencyKey } from "@/server/credits/reserve.js";
 import { dispatchAgentTurn } from "@/server/jobs/dispatch.js";
+import { logInfo, logWarn, traceFields } from "@/server/log.js";
 import { createRunRealtimeToken } from "@/server/realtime/token.js";
 
 export const sendMessageBodySchema = z.object({
@@ -60,6 +61,13 @@ export async function admitTurn(input: {
       planMode: body.planMode,
     });
   } catch {
+    logWarn("turn.dispatch_failed", traceFields({
+      chatId: persisted.chatId,
+      userId: input.user.id,
+      runId: persisted.runId,
+      messageId: persisted.messageId,
+      traceId: persisted.traceId,
+    }));
     const realtimeToken = await createRunRealtimeToken({
       chatId: persisted.chatId,
       runId: persisted.runId,
@@ -88,6 +96,18 @@ export async function admitTurn(input: {
     chatId: persisted.chatId,
     runId: persisted.runId,
     triggerRunId: handle.id,
+  });
+
+  logInfo("turn.admitted", {
+    ...traceFields({
+      chatId: persisted.chatId,
+      userId: input.user.id,
+      runId: persisted.runId,
+      messageId: persisted.messageId,
+      traceId: persisted.traceId,
+      processId: handle.id,
+    }),
+    replayed: persisted.replayed,
   });
 
   return {

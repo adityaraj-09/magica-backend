@@ -50,6 +50,8 @@ export type GeneratedAsset = {
   filename?: string;
   width?: number;
   height?: number;
+  storageKey?: string;
+  byteSize?: number;
 };
 
 export type ToolExecutionContext = {

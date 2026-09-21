@@ -20,6 +20,7 @@ import { AgentStore, type RunSnapshot } from "./store.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint.js";
 import { noopCredits, type CreditGateway } from "@/server/credits/settle.js";
+import { noopAssets, type AssetGateway } from "@/server/storage/copy.js";
 
 export type AgentTurnInput = {
   chatId: string;
@@ -40,6 +41,7 @@ export type AgentLoopDeps = {
   waitpoints: WaitpointGateway;
   realtime?: RealtimePublisher;
   credits?: CreditGateway;
+  assets?: AssetGateway;
   maxTurns: number;
   waitTimeout: string;
   signal: AbortSignal;
@@ -231,7 +233,9 @@ export async function runAgentLoop(
         live,
         realtime,
         credits,
+        assets: deps.assets ?? noopAssets,
         thinkingStartedAt,
+        traceId: input.traceId,
         deps,
       });
       blocks = appendBlocks(blocks, executed.blocks);
@@ -346,7 +350,9 @@ async function executeProposals(input: {
   live: RunMetadata;
   realtime: RealtimePublisher;
   credits: CreditGateway;
+  assets: AssetGateway;
   thinkingStartedAt: Date;
+  traceId: string;
   deps: AgentLoopDeps;
 }): Promise<{ blocks: ContentBlock[]; aborted?: unknown }> {
   let sequence = (await input.deps.store.nextToolSequence(input.run.id)) - 1;
@@ -441,7 +447,7 @@ async function executeProposals(input: {
             runId: input.run.id,
             messageId: input.assistantMessageId,
             toolCallId: proposal.id,
-            traceId: input.run.id,
+            traceId: input.traceId,
             signal,
           },
           signal,
@@ -460,11 +466,20 @@ async function executeProposals(input: {
           creditCost: result.creditCost,
         });
         await persistSkillHash(input.deps, input.run.id, proposal.name, result.output);
-        if (result.assets?.length) {
+        const assets = result.assets?.length
+          ? await input.assets.persist({
+              chatId: input.run.chatId,
+              runId: input.run.id,
+              toolCallId: proposal.id,
+              assets: result.assets,
+              signal,
+            })
+          : [];
+        if (assets.length) {
           await input.deps.store.saveGeneratedAssets({
             run: input.run,
             toolInvocationId: saved.id,
-            assets: result.assets,
+            assets,
           });
         }
         const settled = await input.credits.settleTool({
@@ -492,7 +507,7 @@ async function executeProposals(input: {
             toolName: proposal.name,
             output: result.output,
           },
-          ...(result.assets ?? []).map(
+          ...assets.map(
             (asset): ContentBlock => ({
               type: "asset",
               url: asset.url,

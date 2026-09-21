@@ -11,6 +11,7 @@ import { agentTurnsQueue } from "./queues.js";
 import { createTriggerRealtime } from "./realtime.js";
 import { createTriggerWaitpoints } from "./waitpoints.js";
 import { createCreditGateway } from "@/server/credits/settle.js";
+import { createAssetGateway } from "@/server/storage/copy.js";
 
 /**
  * One durable agent turn. Trigger with:
@@ -26,10 +27,11 @@ export const orchestrateAgentTurn = schemaTask({
   run: async (payload, { ctx, signal }) => {
     logger.info("Agent turn started", {
       chatId: payload.chatId,
+      userId: payload.userId,
       runId: payload.runId,
       messageId: payload.messageId,
       traceId: payload.traceId,
-      triggerRunId: ctx.run.id,
+      processId: ctx.run.id,
     });
 
     const { registry, skills } = await createAgentRuntime();
@@ -48,6 +50,7 @@ export const orchestrateAgentTurn = schemaTask({
         waitpoints: createTriggerWaitpoints(store),
         realtime: createTriggerRealtime(),
         credits: createCreditGateway(prisma),
+        assets: createAssetGateway(),
         maxTurns: parsePositiveInt(process.env.AGENT_MAX_TURNS, 8),
         waitTimeout: process.env.WAITPOINT_TIMEOUT ?? "24h",
         signal,
@@ -55,7 +58,12 @@ export const orchestrateAgentTurn = schemaTask({
     );
 
     logger.info("Agent turn finished", {
+      chatId: payload.chatId,
+      userId: payload.userId,
       runId: payload.runId,
+      messageId: payload.messageId,
+      traceId: payload.traceId,
+      processId: ctx.run.id,
       status: result.status,
       assistantMessageId: result.assistantMessageId,
     });

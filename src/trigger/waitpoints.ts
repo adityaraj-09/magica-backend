@@ -33,6 +33,7 @@ export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
 
       logger.info("Waitpoint opened", {
         chatId: input.run.chatId,
+        userId: input.run.userId,
         runId: input.run.id,
         waitpointTokenId: token.id,
         type: input.type,
@@ -50,6 +51,7 @@ export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
         });
         logger.info("Waitpoint expired", {
           chatId: input.run.chatId,
+          userId: input.run.userId,
           runId: input.run.id,
           waitpointTokenId: token.id,
           type: input.type,

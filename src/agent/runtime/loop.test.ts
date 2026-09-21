@@ -510,14 +510,44 @@ describe("runAgentLoop", () => {
         .mockResolvedValueOnce(completion({ text: "cropped", finishReason: "stop" })),
     };
     const awaitApproval = vi.fn(async () => "approved" as const);
-    const deps = createDeps(llm, { registry, waitpoints: { awaitApproval } });
+    const persist = vi.fn(async (input: { assets: Array<{ url: string; mimeType: string }> }) =>
+      input.assets.map((asset) => ({
+        ...asset,
+        url: "https://cdn.galaxy.test/generated/out.png",
+        storageKey: "generated/out.png",
+        byteSize: 12,
+      })),
+    );
+    const deps = createDeps(llm, {
+      registry,
+      waitpoints: { awaitApproval },
+      assets: { persist },
+    });
     await runAgentLoop(turn, deps);
+    expect(persist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: ids.chatId,
+        runId: ids.runId,
+        toolCallId: "call_crop",
+        assets: [expect.objectContaining({ url: "https://cdn.example/out.png" })],
+      }),
+    );
+    expect(deps.store.saveGeneratedAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assets: [
+          expect.objectContaining({
+            url: "https://cdn.galaxy.test/generated/out.png",
+            storageKey: "generated/out.png",
+          }),
+        ],
+      }),
+    );
     expect(awaitApproval).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "MEDIA",
         idempotencyKey: `run:${ids.runId}:wait:media:1`,
         payload: expect.objectContaining({
-          assets: [expect.objectContaining({ url: "https://cdn.example/out.png" })],
+          assets: [expect.objectContaining({ url: "https://cdn.galaxy.test/generated/out.png" })],
         }),
       }),
     );

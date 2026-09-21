@@ -11,4 +11,19 @@ export function withSignal(
   return { ...ctx, signal };
 }
 
+export function childTrace(
+  ctx: PayloadContext,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    chatId: ctx.chatId,
+    userId: ctx.userId,
+    runId: ctx.runId,
+    messageId: ctx.messageId,
+    traceId: ctx.traceId,
+    toolCallId: ctx.toolCallId,
+    ...extra,
+  };
+}
+
 export type ChildToolResult<T> = ToolExecutionResult<T>;

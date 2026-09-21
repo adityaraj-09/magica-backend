@@ -114,6 +114,15 @@ describe("admitTurn", () => {
     expect(messageCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects a second send while a run is STOPPING", async () => {
+    runFindFirst.mockResolvedValue({ id: ids.runId, status: "STOPPING" });
+    await expect(
+      admitTurn({ user, chatId: ids.chatId, body: { text: "another" } }),
+    ).rejects.toMatchObject({ status: 409, code: "RUN_ACTIVE" });
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(ledgerCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects when the user cannot cover the reserve", async () => {
     userFindUniqueOrThrow.mockResolvedValue({ creditBalance: new Prisma.Decimal("1") });
     await expect(
@@ -186,7 +195,9 @@ describe("admitTurn", () => {
     expect(result.replayed).toBe(true);
     expect(messageCreate).not.toHaveBeenCalled();
     expect(ledgerCreate).not.toHaveBeenCalled();
-    expect(dispatchAgentTurn).toHaveBeenCalled();
+    expect(dispatchAgentTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: ids.messageId, runId: ids.runId }),
+    );
   });
 
   it("creates the chat when it does not exist yet", async () => {

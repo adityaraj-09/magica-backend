@@ -39,6 +39,14 @@ describe("dispatchAgentTurn", () => {
     );
   });
 
+  it("uses the same messageId idempotency key on a duplicate dispatch", async () => {
+    await dispatchAgentTurn(payload);
+    await dispatchAgentTurn(payload);
+    expect(trigger).toHaveBeenCalledTimes(2);
+    expect(trigger.mock.calls[0]?.[2]).toMatchObject({ idempotencyKey: payload.messageId });
+    expect(trigger.mock.calls[1]?.[2]).toMatchObject({ idempotencyKey: payload.messageId });
+  });
+
   it("rejects a malformed turn payload before contacting Trigger.dev", async () => {
     await expect(
       dispatchAgentTurn({ ...payload, chatId: "not-a-uuid" }),
