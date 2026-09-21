@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types.js";
 import type { ChatClient, ChatCompletionResult } from "@/agent/llm/types.js";
+import { ToolError } from "@/agent/tools/errors.js";
 import { ToolRegistry } from "@/agent/tools/registry.js";
 import {
+  cropImageInputSchema,
+  cropImageOutputSchema,
   loadSkillInputSchema,
   loadSkillOutputSchema,
 } from "@/agent/tools/schemas.js";
@@ -10,6 +13,7 @@ import { TOOL_NAMES } from "@/agent/tools/types.js";
 import { runAgentLoop, type AgentLoopDeps } from "./loop.js";
 import type { AgentStore, RunSnapshot } from "./store.js";
 import type { ContentBlock } from "./content-blocks.js";
+import { LLM_TOOL_RESULT_MAX_CHARS } from "./history.js";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",
@@ -42,7 +46,13 @@ function completion(partial: Partial<ChatCompletionResult>): ChatCompletionResul
   };
 }
 
-function createRegistry(): ToolRegistry {
+function createRegistry(
+  execute?: (input: { name: string }) => Promise<{
+    output: { name: string; description: string; body: string; contentHash: string };
+    creditCost: string;
+    durationMs: number;
+  }>,
+): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register({
     name: TOOL_NAMES.loadSkill,
@@ -54,18 +64,29 @@ function createRegistry(): ToolRegistry {
     input: loadSkillInputSchema,
     output: loadSkillOutputSchema,
     estimateCredits: () => "0",
-    execute: async (input) => ({
-      output: {
-        name: input.name,
-        description: "desc",
-        body: "body",
-        contentHash: "hash_skill",
-      },
-      creditCost: "0",
-      durationMs: 4,
-    }),
+    execute: execute
+      ? (input) => execute(input)
+      : async (input) => ({
+          output: {
+            name: input.name,
+            description: "desc",
+            body: "body",
+            contentHash: "hash_skill",
+          },
+          creditCost: "0",
+          durationMs: 4,
+        }),
   });
   return registry;
+}
+
+function skillCall(id = "call_skill") {
+  return {
+    id,
+    name: "load_skill" as const,
+    arguments: { name: "image-editing" },
+    rawArguments: '{"name":"image-editing"}',
+  };
 }
 
 function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): AgentLoopDeps {
@@ -216,5 +237,146 @@ describe("runAgentLoop", () => {
     await runAgentLoop(turn, deps);
     await runAgentLoop(turn, deps);
     expect(deps.store.listHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for plan approval only on the first tool batch", async () => {
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [skillCall("call_1")],
+          }),
+        )
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [skillCall("call_2")],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "done", finishReason: "stop" })),
+    };
+    const deps = createDeps(llm, {
+      waitpoints: { awaitApproval: vi.fn(async () => "approved" as const) },
+    });
+    const result = await runAgentLoop({ ...turn, planMode: true }, deps);
+    expect(result.status).toBe("COMPLETE");
+    expect(deps.waitpoints.awaitApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the run CANCELLED when a tool is aborted", async () => {
+    const llm: ChatClient = {
+      complete: vi.fn(async () =>
+        completion({
+          finishReason: "tool_calls",
+          toolCalls: [skillCall()],
+        }),
+      ),
+    };
+    const deps = createDeps(llm, {
+      registry: createRegistry(async () => {
+        throw new ToolError("CANCELLED", "Skill load cancelled");
+      }),
+    });
+    const result = await runAgentLoop(turn, deps);
+    expect(result.status).toBe("CANCELLED");
+    expect(deps.store.upsertToolInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED", errorCode: "CANCELLED" }),
+    );
+    expect(llm.complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a rate-limited tool and keeps the original error code if it still fails", async () => {
+    vi.useFakeTimers();
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [skillCall()],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "recovered", finishReason: "stop" })),
+    };
+    const execute = vi.fn(async () => {
+      throw new ToolError("RATE_LIMITED", "Free models are rate limited. Try again shortly.");
+    });
+    const deps = createDeps(llm, { registry: createRegistry(execute) });
+    const pending = runAgentLoop(turn, deps);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    vi.useRealTimers();
+    expect(result.status).toBe("COMPLETE");
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(deps.store.upsertToolInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "FAILED",
+        errorCode: "RATE_LIMITED",
+        errorMessage: "Free models are rate limited. Try again shortly.",
+      }),
+    );
+  });
+
+  it("sends truncated tool results to the LLM while persisting the full output", async () => {
+    const huge = `https://cdn.example/${"a".repeat(LLM_TOOL_RESULT_MAX_CHARS)}`;
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.cropImage,
+      description: "Crop",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: cropImageInputSchema,
+      output: cropImageOutputSchema,
+      estimateCredits: () => "0",
+      execute: async () => ({
+        output: { image_url: huge },
+        creditCost: "0",
+        durationMs: 2,
+      }),
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "call_crop",
+                name: "crop_image",
+                arguments: {
+                  image_url: "https://cdn.example/in.png",
+                  x_percent: 0,
+                  y_percent: 0,
+                  width_percent: 50,
+                  height_percent: 50,
+                },
+                rawArguments: "{}",
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "cropped", finishReason: "stop" })),
+    };
+    const deps = createDeps(llm, { registry });
+    await runAgentLoop(turn, deps);
+    const second = vi.mocked(llm.complete).mock.calls[1]?.[0];
+    const toolMessage = second?.messages.find((message) => message.role === "tool");
+    expect(toolMessage?.role).toBe("tool");
+    if (toolMessage?.role === "tool") {
+      expect(toolMessage.content).toContain("truncated");
+      expect(toolMessage.content).not.toContain(huge);
+    }
+    expect(deps.store.saveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: expect.arrayContaining([
+          expect.objectContaining({ type: "tool_result", output: { image_url: huge } }),
+        ]),
+      }),
+    );
   });
 });

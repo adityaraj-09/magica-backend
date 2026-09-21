@@ -1,4 +1,4 @@
-export { ToolError } from "./errors.js";
+export { ToolError, toolErrorFromUnknown } from "./errors.js";
 export { ToolRegistry } from "./registry.js";
 export { createToolRegistry } from "./catalog.js";
 export { createWebSearchAdapter, ExaWebSearchAdapter, StubWebSearchAdapter } from "./adapters/exa.js";

@@ -65,6 +65,7 @@ export async function runAgentLoop(
   let completionTokens = 0;
   let modelRouted: string | undefined;
   const thinkingStartedAt = new Date();
+  let planWaitPending = Boolean(input.planMode);
 
   await deps.store.updateRun({
     runId: run.id,
@@ -128,7 +129,7 @@ export async function runAgentLoop(
         });
       }
 
-      if (input.planMode) {
+      if (planWaitPending) {
         await deps.store.updateRun({
           runId: run.id,
           chatId: run.chatId,
@@ -163,6 +164,7 @@ export async function runAgentLoop(
                 : "The plan was not approved.",
           });
         }
+        planWaitPending = false;
       }
 
       await deps.store.updateRun({
@@ -184,6 +186,9 @@ export async function runAgentLoop(
         deps,
       });
       blocks = appendBlocks(blocks, executed.blocks);
+      if (executed.aborted) {
+        throw executed.aborted;
+      }
       await persistAssistant(deps, assistant.id, blocks, {
         promptTokens,
         completionTokens,
@@ -255,18 +260,25 @@ async function completeWithRetry(deps: AgentLoopDeps, messages: LlmMessage[]) {
   throw lastError;
 }
 
+const MAX_TOOL_ATTEMPTS = 3;
+
 async function executeProposals(input: {
   run: RunSnapshot;
   assistantMessageId: string;
   proposals: LlmToolCallProposal[];
   liveBlocks: ContentBlock[];
   deps: AgentLoopDeps;
-}): Promise<{ blocks: ContentBlock[] }> {
+}): Promise<{ blocks: ContentBlock[]; aborted?: unknown }> {
   let sequence = (await input.deps.store.nextToolSequence(input.run.id)) - 1;
   const jobs = input.proposals.map((proposal) => {
     sequence += 1;
     return { proposal, sequence };
   });
+  const batchAbort = new AbortController();
+  const signal =
+    typeof AbortSignal.any === "function"
+      ? AbortSignal.any([input.deps.signal, batchAbort.signal])
+      : input.deps.signal;
 
   const started = await Promise.all(
     jobs.map(async ({ proposal, sequence: toolSequence }, index) => {
@@ -297,7 +309,7 @@ async function executeProposals(input: {
           status: "RUNNING",
           payload: proposal.arguments,
         });
-        const result = await executeRegisteredTool({
+        const result = await executeToolWithRetry({
           registry: input.deps.registry,
           children: input.deps.children,
           name: proposal.name,
@@ -309,8 +321,9 @@ async function executeProposals(input: {
             messageId: input.assistantMessageId,
             toolCallId: proposal.id,
             traceId: input.run.id,
-            signal: input.deps.signal,
+            signal,
           },
+          signal,
         });
         const saved = await input.deps.store.upsertToolInvocation({
           run: input.run,
@@ -357,41 +370,107 @@ async function executeProposals(input: {
         ];
         return { index, block: blocks };
       } catch (error) {
-        const message = userSafeError(error);
-        await input.deps.store.upsertToolInvocation({
-          run: input.run,
-          toolCallId: proposal.id,
-          toolName: proposal.name,
+        const cancelled = input.deps.signal.aborted || batchAbort.signal.aborted || isCancelled(error);
+        if (cancelled) {
+          batchAbort.abort();
+          await persistInvocationFailure({
+            input,
+            proposal,
+            provider,
+            toolSequence,
+            error,
+            status: "CANCELLED",
+          });
+          return {
+            index,
+            aborted: error instanceof ToolError || error instanceof LlmError
+              ? error
+              : new ToolError("CANCELLED", "The run was cancelled."),
+            block: resultBlock(proposal, undefined, userSafeError(error)),
+          };
+        }
+        await persistInvocationFailure({
+          input,
+          proposal,
           provider,
-          sequence: toolSequence,
+          toolSequence,
+          error,
           status: "FAILED",
-          payload: proposal.arguments,
-          errorCode: error instanceof ToolError ? error.code : "FAILED",
-          errorMessage: message,
         });
         return {
           index,
-          block: [
-            {
-              type: "tool_use" as const,
-              toolCallId: proposal.id,
-              toolName: proposal.name,
-              input: proposal.arguments,
-            },
-            {
-              type: "tool_result" as const,
-              toolCallId: proposal.id,
-              toolName: proposal.name,
-              error: message,
-            },
-          ],
+          block: resultBlock(proposal, undefined, userSafeError(error)),
         };
       }
     }),
   );
 
   started.sort((a, b) => a.index - b.index);
-  return { blocks: started.flatMap((item) => item.block) };
+  const aborted = started.find((item) => item.aborted)?.aborted;
+  return { blocks: started.flatMap((item) => item.block), aborted };
+}
+
+async function executeToolWithRetry(input: {
+  registry: ToolRegistry;
+  children: ChildTaskRunner;
+  name: string;
+  raw: unknown;
+  ctx: Parameters<typeof executeRegisteredTool>[0]["ctx"];
+  signal: AbortSignal;
+}) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_TOOL_ATTEMPTS; attempt += 1) {
+    try {
+      return await executeRegisteredTool({
+        registry: input.registry,
+        children: input.children,
+        name: input.name,
+        raw: input.raw,
+        ctx: { ...input.ctx, signal: input.signal },
+      });
+    } catch (error) {
+      lastError = error;
+      if (isCancelled(error) || input.signal.aborted) {
+        throw error instanceof ToolError || error instanceof LlmError
+          ? error
+          : new ToolError("CANCELLED", "The run was cancelled.");
+      }
+      if (error instanceof ToolError && error.retryable && attempt < MAX_TOOL_ATTEMPTS - 1) {
+        await sleep(2_000 * (attempt + 1), input.signal);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+async function persistInvocationFailure(input: {
+  input: {
+    run: RunSnapshot;
+    deps: AgentLoopDeps;
+  };
+  proposal: LlmToolCallProposal;
+  provider: "MAGICA" | "E2B" | "EXA" | "SKILL" | "INTERNAL";
+  toolSequence: number;
+  error: unknown;
+  status: "FAILED" | "CANCELLED";
+}): Promise<void> {
+  try {
+    await input.input.deps.store.upsertToolInvocation({
+      run: input.input.run,
+      toolCallId: input.proposal.id,
+      toolName: input.proposal.name,
+      provider: input.provider,
+      sequence: input.toolSequence,
+      status: input.status,
+      payload: input.proposal.arguments,
+      errorCode: input.error instanceof ToolError ? input.error.code : input.status,
+      errorMessage: userSafeError(input.error),
+    });
+  } catch {
+    // Best-effort: the run is already aborting or failing.
+  }
 }
 
 async function persistSkillHash(
@@ -530,7 +609,8 @@ function throwIfAborted(signal: AbortSignal): void {
 function isCancelled(error: unknown): boolean {
   return (
     (error instanceof LlmError && error.code === "CANCELLED") ||
-    (error instanceof ToolError && error.code === "CANCELLED")
+    (error instanceof ToolError && error.code === "CANCELLED") ||
+    (error instanceof Error && (error.name === "AbortError" || error.name.startsWith("ToolError:CANCELLED:")))
   );
 }
 

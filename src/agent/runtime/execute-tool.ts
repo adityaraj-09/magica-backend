@@ -6,7 +6,7 @@ export type ChildToolRequest = {
   provider: ToolProvider;
   toolName: string;
   input: unknown;
-  ctx: Omit<ToolExecutionContext, "signal">;
+  ctx: ToolExecutionContext;
 };
 
 export type ChildTaskRunner = {
@@ -29,14 +29,7 @@ export async function executeRegisteredTool(input: {
     provider: tool.provider,
     toolName: tool.name,
     input: parsed,
-    ctx: {
-      chatId: input.ctx.chatId,
-      userId: input.ctx.userId,
-      runId: input.ctx.runId,
-      messageId: input.ctx.messageId,
-      toolCallId: input.ctx.toolCallId,
-      traceId: input.ctx.traceId,
-    },
+    ctx: input.ctx,
   });
   const output = tool.output.safeParse(result.output);
   if (!output.success) {

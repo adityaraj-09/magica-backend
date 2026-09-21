@@ -18,6 +18,31 @@ export type HistoryMessage = {
 
 const IMAGE_MIME = /^image\//;
 
+/** Max JSON size sent back to OpenRouter per tool_result. Persisted blocks stay full. */
+export const LLM_TOOL_RESULT_MAX_CHARS = 4_096;
+
+const KEEP_FULL_TOOL_RESULTS = new Set(["load_skill", "read_skill_asset"]);
+
+export function truncateToolResultForLlm(toolName: string, output: unknown): unknown {
+  if (KEEP_FULL_TOOL_RESULTS.has(toolName)) return output;
+  if (typeof output === "string") {
+    return output.length <= LLM_TOOL_RESULT_MAX_CHARS
+      ? output
+      : `${output.slice(0, LLM_TOOL_RESULT_MAX_CHARS)}\n… truncated`;
+  }
+  let json: string;
+  try {
+    json = JSON.stringify(output);
+  } catch {
+    return { truncated: true, preview: "[unserializable tool output]" };
+  }
+  if (json.length <= LLM_TOOL_RESULT_MAX_CHARS) return output;
+  return {
+    truncated: true,
+    preview: json.slice(0, LLM_TOOL_RESULT_MAX_CHARS),
+  };
+}
+
 export function messagesToLlm(history: HistoryMessage[]): LlmMessage[] {
   const out: LlmMessage[] = [];
   for (const message of history) {
@@ -111,7 +136,9 @@ export function assistantBlocksToLlm(
     if (block.type === "tool_result") {
       results.push({
         id: block.toolCallId,
-        content: block.error ? { error: block.error } : (block.output ?? {}),
+        content: block.error
+          ? { error: block.error }
+          : truncateToolResultForLlm(block.toolName, block.output ?? {}),
       });
     }
   }

@@ -8,6 +8,7 @@ import { createAgentRuntime, resetAgentRuntime } from "./create-runtime.js";
 
 function testEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
   return {
+    NODE_ENV: "test",
     MAGICA_API_KEY: "test-magica",
     E2B_API_KEY: "test-e2b",
     SKILLS_DIR: "agent-skills",
