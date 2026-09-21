@@ -85,6 +85,7 @@ enum MessageAttachmentSource {
 enum ToolProvider {
   MAGICA
   E2B
+  EXA
   SKILL
   INTERNAL
 }
