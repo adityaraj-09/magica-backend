@@ -1,6 +1,11 @@
-import { wait } from "@trigger.dev/sdk";
+import { logger, wait } from "@trigger.dev/sdk";
 import type { AgentStore } from "@/agent/runtime/store.js";
 import type { WaitpointApproval, WaitpointGateway } from "@/agent/runtime/waitpoint.js";
+
+export type WaitpointTokenOutput = {
+  status: "approved" | "rejected";
+  approved: boolean;
+};
 
 export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
   return {
@@ -13,10 +18,10 @@ export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
       const token = await wait.createToken({
         timeout: input.timeout,
         idempotencyKey: input.idempotencyKey,
-        tags: [input.run.chatId, input.run.id],
+        tags: [input.run.chatId, input.run.id, input.type.toLowerCase()],
       });
 
-      await store.saveWaitpoint({
+      const overlay = await store.saveWaitpoint({
         run: input.run,
         type: input.type,
         triggerWaitpointId: token.id,
@@ -26,15 +31,28 @@ export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
         timeoutAt: timeoutDate(input.timeout),
       });
 
-      const result = await wait.forToken<{
-        approved?: boolean;
-        status?: "approved" | "rejected";
-      }>(token.id);
+      logger.info("Waitpoint opened", {
+        chatId: input.run.chatId,
+        runId: input.run.id,
+        waitpointTokenId: token.id,
+        type: input.type,
+        timeoutAt: overlay.timeoutAt,
+      });
+
+      await input.onOpen?.(overlay);
+
+      const result = await wait.forToken<WaitpointTokenOutput>(token.id);
 
       if (!result.ok) {
         await store.finishWaitpoint({
           idempotencyKey: input.idempotencyKey,
           status: "EXPIRED",
+        });
+        logger.info("Waitpoint expired", {
+          chatId: input.run.chatId,
+          runId: input.run.id,
+          waitpointTokenId: token.id,
+          type: input.type,
         });
         return "expired";
       }
@@ -51,7 +69,7 @@ export function createTriggerWaitpoints(store: AgentStore): WaitpointGateway {
   };
 }
 
-function timeoutDate(timeout: string): Date {
+export function timeoutDate(timeout: string, from = Date.now()): Date {
   const match = /^(\d+)(s|m|h|d)$/.exec(timeout.trim());
   const amount = match ? Number(match[1]) : 24;
   const unit = match?.[2] ?? "h";
@@ -63,5 +81,5 @@ function timeoutDate(timeout: string): Date {
         : unit === "d"
           ? amount * 86_400_000
           : amount * 3_600_000;
-  return new Date(Date.now() + ms);
+  return new Date(from + ms);
 }

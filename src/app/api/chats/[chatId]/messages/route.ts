@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/server/auth/require-user";
+import { admitTurn } from "@/server/chat/admit-turn";
+import { jsonError } from "@/server/http/json-error";
+
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: Promise<{ chatId: string }> };
+
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const user = await requireUser();
+    const { chatId } = await context.params;
+    const body: unknown = await request.json().catch(() => null);
+    const admitted = await admitTurn({ user, chatId, body });
+    return NextResponse.json(
+      {
+        chatId: admitted.chatId,
+        messageId: admitted.messageId,
+        runId: admitted.runId,
+        triggerRunId: admitted.triggerRunId,
+        realtimeToken: admitted.realtimeToken,
+      },
+      { status: admitted.replayed ? 200 : 201 },
+    );
+  } catch (error) {
+    return jsonError(error);
+  }
+}

@@ -6,6 +6,7 @@ import {
   type ContentBlock,
 } from "./content-blocks.js";
 import type { HistoryMessage } from "./history.js";
+import { overlayFromWaitpoint, type WaitpointOverlay } from "./realtime.js";
 
 export type RunSnapshot = {
   id: string;
@@ -14,6 +15,7 @@ export type RunSnapshot = {
   userMessageId: string;
   status: string;
   triggerRunId: string | null;
+  reservedCredits: string;
 };
 
 export type ToolInvocationSnapshot = {
@@ -28,9 +30,13 @@ export type ToolInvocationSnapshot = {
 
 export type WaitpointSnapshot = {
   id: string;
-  type: string;
-  status: string;
+  type: "OPTIONS" | "PLAN" | "CREDIT" | "MEDIA";
+  status: "WAITING" | "COMPLETED" | "EXPIRED" | "CANCELLED";
   triggerWaitpointId: string;
+  publicAccessToken: string | null;
+  timeoutAt: Date;
+  payload: unknown;
+  result: unknown;
 };
 
 export class AgentStore {
@@ -46,6 +52,7 @@ export class AgentStore {
         userMessageId: true,
         status: true,
         triggerRunId: true,
+        reservedCredits: true,
         chat: { select: { deletedAt: true } },
       },
     });
@@ -57,7 +64,16 @@ export class AgentStore {
       userMessageId: run.userMessageId,
       status: run.status,
       triggerRunId: run.triggerRunId,
+      reservedCredits: run.reservedCredits.toString(),
     };
+  }
+
+  async spentCredits(runId: string): Promise<Prisma.Decimal> {
+    const agg = await this.prisma.toolInvocation.aggregate({
+      where: { agentRunId: runId, status: "SUCCESS" },
+      _sum: { creditCost: true },
+    });
+    return agg._sum.creditCost ?? new Prisma.Decimal(0);
   }
 
   async listHistory(chatId: string): Promise<HistoryMessage[]> {
@@ -289,8 +305,8 @@ export class AgentStore {
     idempotencyKey: string;
     payload: unknown;
     timeoutAt: Date;
-  }): Promise<void> {
-    await this.prisma.waitpoint.upsert({
+  }): Promise<WaitpointOverlay> {
+    const row = await this.prisma.waitpoint.upsert({
       where: { idempotencyKey: input.idempotencyKey },
       create: {
         agentRunId: input.run.id,
@@ -307,9 +323,14 @@ export class AgentStore {
       update: {
         triggerWaitpointId: input.triggerWaitpointId,
         publicAccessToken: input.publicAccessToken,
+        payload: input.payload as Prisma.InputJsonValue,
+        timeoutAt: input.timeoutAt,
         status: "WAITING",
+        completedAt: null,
+        result: Prisma.JsonNull,
       },
     });
+    return overlayFromWaitpoint(row);
   }
 
   async finishWaitpoint(input: {
@@ -317,8 +338,8 @@ export class AgentStore {
     status: "COMPLETED" | "EXPIRED" | "CANCELLED";
     result?: unknown;
   }): Promise<void> {
-    await this.prisma.waitpoint.update({
-      where: { idempotencyKey: input.idempotencyKey },
+    await this.prisma.waitpoint.updateMany({
+      where: { idempotencyKey: input.idempotencyKey, status: "WAITING" },
       data: {
         status: input.status,
         result: (input.result ?? undefined) as Prisma.InputJsonValue | undefined,
@@ -331,13 +352,23 @@ export class AgentStore {
     const row = await this.prisma.waitpoint.findUnique({
       where: { idempotencyKey },
     });
-    if (!row) return null;
-    return {
-      id: row.id,
-      type: row.type,
-      status: row.status,
-      triggerWaitpointId: row.triggerWaitpointId,
-    };
+    return row ? toWaitpointSnapshot(row) : null;
+  }
+
+  async expireTimedOutWaitpoint(
+    runId: string,
+    now = new Date(),
+  ): Promise<WaitpointSnapshot | null> {
+    const open = await this.prisma.waitpoint.findFirst({
+      where: { agentRunId: runId, status: "WAITING" },
+    });
+    if (!open) return null;
+    if (open.timeoutAt > now) return toWaitpointSnapshot(open);
+    const expired = await this.prisma.waitpoint.update({
+      where: { id: open.id },
+      data: { status: "EXPIRED", completedAt: now },
+    });
+    return toWaitpointSnapshot(expired);
   }
 
   async updateRun(input: {
@@ -391,4 +422,26 @@ export class AgentStore {
         : []),
     ]);
   }
+}
+
+function toWaitpointSnapshot(row: {
+  id: string;
+  type: "OPTIONS" | "PLAN" | "CREDIT" | "MEDIA";
+  status: "WAITING" | "COMPLETED" | "EXPIRED" | "CANCELLED";
+  triggerWaitpointId: string;
+  publicAccessToken: string | null;
+  timeoutAt: Date;
+  payload: unknown;
+  result: unknown;
+}): WaitpointSnapshot {
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    triggerWaitpointId: row.triggerWaitpointId,
+    publicAccessToken: row.publicAccessToken,
+    timeoutAt: row.timeoutAt,
+    payload: row.payload,
+    result: row.result,
+  };
 }

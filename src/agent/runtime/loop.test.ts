@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types.js";
 import type { ChatClient, ChatCompletionResult } from "@/agent/llm/types.js";
 import { ToolError } from "@/agent/tools/errors.js";
@@ -30,6 +31,7 @@ const run: RunSnapshot = {
   userMessageId: ids.messageId,
   status: "QUEUED",
   triggerRunId: null,
+  reservedCredits: "10",
 };
 
 function completion(partial: Partial<ChatCompletionResult>): ChatCompletionResult {
@@ -116,6 +118,7 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
     saveWaitpoint: vi.fn(async () => undefined),
     finishWaitpoint: vi.fn(async () => undefined),
     getWaitpoint: vi.fn(async () => null),
+    spentCredits: vi.fn(async () => new Prisma.Decimal(0)),
     updateRun: vi.fn(async () => undefined),
     skills,
   };
@@ -127,6 +130,11 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
     skills: [{ name: "image-editing", description: "Edit images" }],
     children: { run: vi.fn() },
     waitpoints: { awaitApproval: vi.fn(async () => "approved" as const) },
+    realtime: {
+      publish: vi.fn(),
+      appendText: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+    },
     maxTurns: 4,
     waitTimeout: "1m",
     signal: new AbortController().signal,
@@ -376,6 +384,126 @@ describe("runAgentLoop", () => {
         blocks: expect.arrayContaining([
           expect.objectContaining({ type: "tool_result", output: { image_url: huge } }),
         ]),
+      }),
+    );
+  });
+
+  it("streams tokens and publishes run metadata", async () => {
+    const llm: ChatClient = {
+      complete: vi.fn(async (request) => {
+        request.onToken?.("Hel");
+        request.onToken?.("lo");
+        return completion({ text: "Hello", finishReason: "stop" });
+      }),
+    };
+    const deps = createDeps(llm);
+    await runAgentLoop(turn, deps);
+    expect(deps.realtime?.appendText).toHaveBeenCalledWith("Hel");
+    expect(deps.realtime?.appendText).toHaveBeenCalledWith("lo");
+    expect(deps.realtime?.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "THINKING", runId: ids.runId }),
+    );
+    expect(deps.realtime?.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "COMPLETE", waitpoint: null }),
+    );
+    expect(deps.realtime?.flush).toHaveBeenCalled();
+  });
+
+  it("opens a credit waitpoint when the batch estimate exceeds remaining reserve", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.loadSkill,
+      description: "Load a skill",
+      provider: "SKILL",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "skill",
+      input: loadSkillInputSchema,
+      output: loadSkillOutputSchema,
+      estimateCredits: () => "50",
+      execute: async (input) => ({
+        output: {
+          name: input.name,
+          description: "desc",
+          body: "body",
+          contentHash: "hash_skill",
+        },
+        creditCost: "50",
+        durationMs: 4,
+      }),
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({ finishReason: "tool_calls", toolCalls: [skillCall()] }),
+        )
+        .mockResolvedValueOnce(completion({ text: "ok", finishReason: "stop" })),
+    };
+    const awaitApproval = vi.fn(async () => "approved" as const);
+    const deps = createDeps(llm, { registry, waitpoints: { awaitApproval } });
+    await runAgentLoop(turn, deps);
+    expect(awaitApproval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "CREDIT",
+        idempotencyKey: `run:${ids.runId}:wait:credit:1`,
+      }),
+    );
+  });
+
+  it("opens a media waitpoint after generated assets", async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.cropImage,
+      description: "Crop",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: cropImageInputSchema,
+      output: cropImageOutputSchema,
+      estimateCredits: () => "0",
+      execute: async () => ({
+        output: { image_url: "https://cdn.example/out.png" },
+        creditCost: "0",
+        durationMs: 2,
+        assets: [{ url: "https://cdn.example/out.png", mimeType: "image/png" }],
+      }),
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "call_crop",
+                name: "crop_image",
+                arguments: {
+                  image_url: "https://cdn.example/in.png",
+                  x_percent: 0,
+                  y_percent: 0,
+                  width_percent: 50,
+                  height_percent: 50,
+                },
+                rawArguments: "{}",
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "cropped", finishReason: "stop" })),
+    };
+    const awaitApproval = vi.fn(async () => "approved" as const);
+    const deps = createDeps(llm, { registry, waitpoints: { awaitApproval } });
+    await runAgentLoop(turn, deps);
+    expect(awaitApproval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MEDIA",
+        idempotencyKey: `run:${ids.runId}:wait:media:1`,
+        payload: expect.objectContaining({
+          assets: [expect.objectContaining({ url: "https://cdn.example/out.png" })],
+        }),
       }),
     );
   });

@@ -8,6 +8,7 @@ import { triggerChildTasks } from "./child-runner.js";
 import { TASK_IDS } from "./ids.js";
 import { agentTurnPayloadSchema } from "./payloads.js";
 import { agentTurnsQueue } from "./queues.js";
+import { createTriggerRealtime } from "./realtime.js";
 import { createTriggerWaitpoints } from "./waitpoints.js";
 
 /**
@@ -44,6 +45,7 @@ export const orchestrateAgentTurn = schemaTask({
         skills: skills.listMetadata(),
         children: triggerChildTasks,
         waitpoints: createTriggerWaitpoints(store),
+        realtime: createTriggerRealtime(),
         maxTurns: parsePositiveInt(process.env.AGENT_MAX_TURNS, 8),
         waitTimeout: process.env.WAITPOINT_TIMEOUT ?? "24h",
         signal,

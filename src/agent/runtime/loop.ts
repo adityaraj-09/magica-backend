@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { LlmError } from "@/agent/llm/errors.js";
 import type { ChatClient, LlmMessage, LlmToolCallProposal } from "@/agent/llm/types.js";
 import { ToolError } from "@/agent/tools/errors.js";
@@ -7,9 +8,17 @@ import { TOOL_NAMES } from "@/agent/tools/types.js";
 import { appendBlocks, type ContentBlock } from "./content-blocks.js";
 import { executeRegisteredTool, type ChildTaskRunner } from "./execute-tool.js";
 import { messagesToLlm } from "./history.js";
+import {
+  noopRealtime,
+  progressFor,
+  upsertToolLive,
+  type RealtimePublisher,
+  type RunMetadata,
+  type ToolLive,
+} from "./realtime.js";
 import { AgentStore, type RunSnapshot } from "./store.js";
 import { buildSystemPrompt } from "./system-prompt.js";
-import type { WaitpointGateway } from "./waitpoint.js";
+import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint.js";
 
 export type AgentTurnInput = {
   chatId: string;
@@ -28,6 +37,7 @@ export type AgentLoopDeps = {
   skills: SkillMetadata[];
   children: ChildTaskRunner;
   waitpoints: WaitpointGateway;
+  realtime?: RealtimePublisher;
   maxTurns: number;
   waitTimeout: string;
   signal: AbortSignal;
@@ -66,6 +76,8 @@ export async function runAgentLoop(
   let modelRouted: string | undefined;
   const thinkingStartedAt = new Date();
   let planWaitPending = Boolean(input.planMode);
+  const realtime = deps.realtime ?? noopRealtime;
+  const live = createLiveMetadata(run, assistant.id);
 
   await deps.store.updateRun({
     runId: run.id,
@@ -79,6 +91,7 @@ export async function runAgentLoop(
     errorCode: null,
     errorMessage: null,
   });
+  publishLive(realtime, live, thinkingStartedAt, { status: "THINKING", currentStep: "thinking" });
 
   try {
     for (let turn = 1; turn <= deps.maxTurns; turn += 1) {
@@ -90,6 +103,10 @@ export async function runAgentLoop(
         status: "THINKING",
         currentStep: `llm:${turn}`,
         thinkingStartedAt,
+      });
+      publishLive(realtime, live, thinkingStartedAt, {
+        status: "THINKING",
+        currentStep: `llm:${turn}`,
       });
 
       const llmMessages = buildMessages(deps, priorMessages, blocks);
@@ -120,7 +137,7 @@ export async function runAgentLoop(
       });
 
       if (proposals.length === 0) {
-        return terminate(deps, run, assistant.id, blocks, {
+        return terminate(deps, run, assistant.id, blocks, live, realtime, {
           status: "COMPLETE",
           promptTokens,
           completionTokens,
@@ -130,18 +147,15 @@ export async function runAgentLoop(
       }
 
       if (planWaitPending) {
-        await deps.store.updateRun({
-          runId: run.id,
-          chatId: run.chatId,
-          status: "WAITING",
-          currentStep: "wait:plan",
-          modelRouted,
-        });
-        const decision = await deps.waitpoints.awaitApproval({
-          type: "PLAN",
+        const decision = await requestApproval({
+          deps,
           run,
+          live,
+          realtime,
+          thinkingStartedAt,
+          type: "PLAN",
+          currentStep: "wait:plan",
           idempotencyKey: `run:${run.id}:wait:plan`,
-          timeout: deps.waitTimeout,
           payload: {
             text: completion.text,
             tools: proposals.map((call) => ({
@@ -151,7 +165,7 @@ export async function runAgentLoop(
           },
         });
         if (decision !== "approved") {
-          return terminate(deps, run, assistant.id, blocks, {
+          return terminate(deps, run, assistant.id, blocks, live, realtime, {
             status: decision === "expired" ? "FAILED" : "CANCELLED",
             promptTokens,
             completionTokens,
@@ -167,6 +181,30 @@ export async function runAgentLoop(
         planWaitPending = false;
       }
 
+      const creditHold = await maybeCreditWait({
+        deps,
+        run,
+        live,
+        realtime,
+        thinkingStartedAt,
+        turn,
+        proposals,
+      });
+      if (creditHold && creditHold !== "approved") {
+        return terminate(deps, run, assistant.id, blocks, live, realtime, {
+          status: creditHold === "expired" ? "FAILED" : "CANCELLED",
+          promptTokens,
+          completionTokens,
+          modelRouted,
+          thinkingStartedAt,
+          errorCode: creditHold === "expired" ? "WAITPOINT_EXPIRED" : "CREDIT_REJECTED",
+          errorMessage:
+            creditHold === "expired"
+              ? "Credit approval timed out."
+              : "Additional credits were not approved.",
+        });
+      }
+
       await deps.store.updateRun({
         runId: run.id,
         chatId: run.chatId,
@@ -177,12 +215,19 @@ export async function runAgentLoop(
         completionTokens,
         thinkingDurationMs: Date.now() - thinkingStartedAt.getTime(),
       });
+      publishLive(realtime, live, thinkingStartedAt, {
+        status: "WORKING",
+        currentStep: `tools:${turn}`,
+      });
 
       const executed = await executeProposals({
         run,
         assistantMessageId: assistant.id,
         proposals,
         liveBlocks: blocks,
+        live,
+        realtime,
+        thinkingStartedAt,
         deps,
       });
       blocks = appendBlocks(blocks, executed.blocks);
@@ -194,9 +239,33 @@ export async function runAgentLoop(
         completionTokens,
         status: "STREAMING",
       });
+
+      const mediaHold = await maybeMediaWait({
+        deps,
+        run,
+        live,
+        realtime,
+        thinkingStartedAt,
+        turn,
+        blocks: executed.blocks,
+      });
+      if (mediaHold && mediaHold !== "approved") {
+        return terminate(deps, run, assistant.id, blocks, live, realtime, {
+          status: mediaHold === "expired" ? "FAILED" : "CANCELLED",
+          promptTokens,
+          completionTokens,
+          modelRouted,
+          thinkingStartedAt,
+          errorCode: mediaHold === "expired" ? "WAITPOINT_EXPIRED" : "MEDIA_REJECTED",
+          errorMessage:
+            mediaHold === "expired"
+              ? "Media approval timed out."
+              : "Generated media was not approved.",
+        });
+      }
     }
 
-    return terminate(deps, run, assistant.id, blocks, {
+    return terminate(deps, run, assistant.id, blocks, live, realtime, {
       status: "FAILED",
       promptTokens,
       completionTokens,
@@ -207,7 +276,7 @@ export async function runAgentLoop(
     });
   } catch (error) {
     const aborted = deps.signal.aborted || isCancelled(error);
-    return terminate(deps, run, assistant.id, blocks, {
+    return terminate(deps, run, assistant.id, blocks, live, realtime, {
       status: aborted ? "CANCELLED" : "FAILED",
       promptTokens,
       completionTokens,
@@ -247,6 +316,9 @@ async function completeWithRetry(deps: AgentLoopDeps, messages: LlmMessage[]) {
         messages,
         tools: deps.registry.listForAgent(),
         signal: deps.signal,
+        onToken: (text) => {
+          void (deps.realtime ?? noopRealtime).appendText(text);
+        },
       });
     } catch (error) {
       lastError = error;
@@ -267,6 +339,9 @@ async function executeProposals(input: {
   assistantMessageId: string;
   proposals: LlmToolCallProposal[];
   liveBlocks: ContentBlock[];
+  live: RunMetadata;
+  realtime: RealtimePublisher;
+  thinkingStartedAt: Date;
   deps: AgentLoopDeps;
 }): Promise<{ blocks: ContentBlock[]; aborted?: unknown }> {
   let sequence = (await input.deps.store.nextToolSequence(input.run.id)) - 1;
@@ -309,6 +384,11 @@ async function executeProposals(input: {
           status: "RUNNING",
           payload: proposal.arguments,
         });
+        publishTool(input, {
+          toolCallId: proposal.id,
+          toolName: proposal.name,
+          status: "RUNNING",
+        });
         const result = await executeToolWithRetry({
           registry: input.deps.registry,
           children: input.deps.children,
@@ -346,6 +426,11 @@ async function executeProposals(input: {
             assets: result.assets,
           });
         }
+        publishTool(input, {
+          toolCallId: proposal.id,
+          toolName: proposal.name,
+          status: "SUCCESS",
+        });
         const blocks: ContentBlock[] = [
           {
             type: "tool_use",
@@ -381,6 +466,12 @@ async function executeProposals(input: {
             error,
             status: "CANCELLED",
           });
+          publishTool(input, {
+            toolCallId: proposal.id,
+            toolName: proposal.name,
+            status: "CANCELLED",
+            errorMessage: userSafeError(error),
+          });
           return {
             index,
             aborted: error instanceof ToolError || error instanceof LlmError
@@ -396,6 +487,12 @@ async function executeProposals(input: {
           toolSequence,
           error,
           status: "FAILED",
+        });
+        publishTool(input, {
+          toolCallId: proposal.id,
+          toolName: proposal.name,
+          status: "FAILED",
+          errorMessage: userSafeError(error),
         });
         return {
           index,
@@ -527,6 +624,8 @@ async function terminate(
   run: RunSnapshot,
   assistantMessageId: string,
   blocks: ContentBlock[],
+  live: RunMetadata,
+  realtime: RealtimePublisher,
   extras: {
     status: "COMPLETE" | "FAILED" | "CANCELLED";
     promptTokens: number;
@@ -564,6 +663,14 @@ async function terminate(
     errorMessage: extras.errorMessage ?? null,
     completedAt: new Date(),
   });
+  live.waitpoint = null;
+  publishLive(realtime, live, extras.thinkingStartedAt, {
+    status: extras.status,
+    currentStep: extras.status.toLowerCase(),
+    errorCode: extras.errorCode ?? null,
+    errorMessage: extras.errorMessage ?? null,
+  });
+  await realtime.flush();
   return { status: extras.status, assistantMessageId };
 }
 
@@ -641,4 +748,168 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function createLiveMetadata(run: RunSnapshot, assistantMessageId: string): RunMetadata {
+  return {
+    chatId: run.chatId,
+    runId: run.id,
+    messageId: run.userMessageId,
+    assistantMessageId,
+    status: "THINKING",
+    currentStep: "thinking",
+    thinkingDurationMs: 0,
+    progressPercent: progressFor("THINKING"),
+    tools: [],
+    waitpoint: null,
+    errorCode: null,
+    errorMessage: null,
+  };
+}
+
+function publishLive(
+  realtime: RealtimePublisher,
+  live: RunMetadata,
+  thinkingStartedAt: Date,
+  patch: Partial<Pick<RunMetadata, "status" | "currentStep" | "errorCode" | "errorMessage">>,
+): void {
+  if (patch.status) live.status = patch.status;
+  if (patch.currentStep !== undefined) live.currentStep = patch.currentStep;
+  if (patch.errorCode !== undefined) live.errorCode = patch.errorCode;
+  if (patch.errorMessage !== undefined) live.errorMessage = patch.errorMessage;
+  live.thinkingDurationMs = Date.now() - thinkingStartedAt.getTime();
+  live.progressPercent = progressFor(live.status);
+  realtime.publish({
+    ...live,
+    tools: live.tools.map((tool) => ({ ...tool })),
+    waitpoint: live.waitpoint ? { ...live.waitpoint } : null,
+  });
+}
+
+function publishTool(
+  input: { live: RunMetadata; realtime: RealtimePublisher; thinkingStartedAt: Date },
+  tool: ToolLive,
+): void {
+  input.live.tools = upsertToolLive(input.live.tools, tool);
+  publishLive(input.realtime, input.live, input.thinkingStartedAt, {});
+}
+
+async function requestApproval(input: {
+  deps: AgentLoopDeps;
+  run: RunSnapshot;
+  live: RunMetadata;
+  realtime: RealtimePublisher;
+  thinkingStartedAt: Date;
+  type: WaitpointKind;
+  currentStep: string;
+  idempotencyKey: string;
+  payload: unknown;
+}): Promise<WaitpointApproval> {
+  await input.deps.store.updateRun({
+    runId: input.run.id,
+    chatId: input.run.chatId,
+    status: "WAITING",
+    currentStep: input.currentStep,
+    thinkingDurationMs: Date.now() - input.thinkingStartedAt.getTime(),
+  });
+  publishLive(input.realtime, input.live, input.thinkingStartedAt, {
+    status: "WAITING",
+    currentStep: input.currentStep,
+  });
+  const decision = await input.deps.waitpoints.awaitApproval({
+    type: input.type,
+    run: input.run,
+    idempotencyKey: input.idempotencyKey,
+    timeout: input.deps.waitTimeout,
+    payload: input.payload,
+    onOpen: (overlay) => {
+      input.live.waitpoint = overlay;
+      publishLive(input.realtime, input.live, input.thinkingStartedAt, {
+        status: "WAITING",
+        currentStep: input.currentStep,
+      });
+    },
+  });
+  input.live.waitpoint = null;
+  publishLive(input.realtime, input.live, input.thinkingStartedAt, {});
+  return decision;
+}
+
+async function maybeCreditWait(input: {
+  deps: AgentLoopDeps;
+  run: RunSnapshot;
+  live: RunMetadata;
+  realtime: RealtimePublisher;
+  thinkingStartedAt: Date;
+  turn: number;
+  proposals: LlmToolCallProposal[];
+}): Promise<WaitpointApproval | null> {
+  const estimates = await estimateBatch(input.deps.registry, input.proposals);
+  if (estimates.total.lte(0)) return null;
+  const spent = await input.deps.store.spentCredits(input.run.id);
+  const remaining = remainingReserved(input.run.reservedCredits, spent);
+  if (estimates.total.lte(remaining)) return null;
+  return requestApproval({
+    ...input,
+    type: "CREDIT",
+    currentStep: "wait:credit",
+    idempotencyKey: `run:${input.run.id}:wait:credit:${input.turn}`,
+    payload: {
+      estimatedCredits: estimates.total.toString(),
+      remainingCredits: remaining.toString(),
+      tools: estimates.tools,
+    },
+  });
+}
+
+async function maybeMediaWait(input: {
+  deps: AgentLoopDeps;
+  run: RunSnapshot;
+  live: RunMetadata;
+  realtime: RealtimePublisher;
+  thinkingStartedAt: Date;
+  turn: number;
+  blocks: ContentBlock[];
+}): Promise<WaitpointApproval | null> {
+  const assets = input.blocks.filter(
+    (block): block is Extract<ContentBlock, { type: "asset" }> => block.type === "asset",
+  );
+  if (assets.length === 0) return null;
+  return requestApproval({
+    ...input,
+    type: "MEDIA",
+    currentStep: "wait:media",
+    idempotencyKey: `run:${input.run.id}:wait:media:${input.turn}`,
+    payload: {
+      assets: assets.map((asset) => ({
+        url: asset.url,
+        mimeType: asset.mimeType,
+        filename: asset.filename,
+      })),
+    },
+  });
+}
+
+async function estimateBatch(
+  registry: ToolRegistry,
+  proposals: LlmToolCallProposal[],
+): Promise<{ tools: Array<{ name: string; credits: string }>; total: Prisma.Decimal }> {
+  const tools: Array<{ name: string; credits: string }> = [];
+  let total = new Prisma.Decimal(0);
+  for (const proposal of proposals) {
+    let credits = "0";
+    try {
+      credits = await registry.estimateCredits(proposal.name, proposal.arguments);
+    } catch {
+      credits = "0";
+    }
+    tools.push({ name: proposal.name, credits });
+    total = total.plus(credits);
+  }
+  return { tools, total };
+}
+
+function remainingReserved(reserved: string, spent: Prisma.Decimal): Prisma.Decimal {
+  const left = new Prisma.Decimal(reserved).minus(spent);
+  return left.isNegative() ? new Prisma.Decimal(0) : left;
 }
