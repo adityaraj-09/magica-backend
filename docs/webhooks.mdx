@@ -68,5 +68,5 @@ HMAC_SHA256(secret, `${timestamp}.${rawBody}`)
 Compare the hex after `sha256=` with a constant-time check.
 
 <Note>
-  Each endpoint, event, and run (or tool call) is delivered once. A duplicate emit is not posted again. Timeouts and non-2xx responses mark that delivery `FAILED` and do not fail the agent turn.
+  Each endpoint, event, and run (or tool call) is delivered once. A duplicate emit is not posted again. A timeout or non-2xx response is retried up to 4 times, waiting 1s, then 5s, then 15s. Each attempt is signed with a fresh timestamp. The row stays `PENDING` until the last failure, then `FAILED`. A failed delivery does not fail the agent turn.
 </Note>

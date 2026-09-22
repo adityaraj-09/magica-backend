@@ -88,7 +88,11 @@ Bearer API keys (`POST /api/keys`, `Authorization: Bearer gxk_live_…`). Clerk 
 | GET | `/api/v1/chats/:chatId/runs/:runId` | Poll run status |
 | POST | `/api/v1/tools/{crop_image,gpt_image_2,merge_videos}` | Magica, waits on the provider |
 
-Outbound webhooks: `POST /api/webhook-endpoints` (secret shown once). Events `agent.started` / `agent.completed` / `agent.failed` / `tool.completed`, HMAC-SHA256 over `${timestamp}.${body}`.
+Outbound webhooks: `POST /api/webhook-endpoints` (secret shown once). Events `agent.started` / `agent.completed` / `agent.failed` / `tool.completed`, HMAC-SHA256 over `${timestamp}.${body}`. Delivery retries 4 times (immediate, then 1s, 5s, 15s) and marks the row `FAILED` only after the last attempt.
+
+## MCP
+
+`POST /api/mcp` is a stateless MCP endpoint (Streamable HTTP, JSON responses). Same Bearer API key as `/api/v1`. Tools: `list_chats`, `get_chat`, `create_chat`, `delete_chat`, `list_messages`, `send_message`, `complete`, `get_run`, `crop_image`, `gpt_image_2`, `merge_videos`. Clerk is skipped for this route.
 
 Mintlify source is `docs/` (`docs.json` + MDX). Host with `npx mintlify dev` or deploy that folder.
 
@@ -106,4 +110,3 @@ Mintlify source is `docs/` (`docs.json` + MDX). Host with `npx mintlify dev` or 
 - Signed object-storage URLs instead of a public bucket prefix.
 - OPTIONS waitpoints and a first-class media-library picker UX.
 - Cassette/replay for Magica live tests in CI so success paths do not depend on a live key.
-- Webhook delivery retries with backoff instead of a single attempt.

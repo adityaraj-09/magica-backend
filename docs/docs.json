@@ -33,6 +33,10 @@
         "pages": ["webhooks"]
       },
       {
+        "group": "MCP",
+        "pages": ["mcp"]
+      },
+      {
         "group": "API reference",
         "openapi": "openapi.yaml"
       }

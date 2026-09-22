@@ -119,6 +119,9 @@ export function createWebhookGateway(db: PrismaClient = prisma): WebhookGateway 
   };
 }
 
+/** Delays before attempts 2, 3, and 4. The first post is immediate. */
+export const WEBHOOK_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
+
 export type EmitWebhooksInput = {
   userId: string;
   event: WebhookEvent;
@@ -129,6 +132,8 @@ export type EmitWebhooksInput = {
   db?: PrismaClient;
   fetchImpl?: typeof fetch;
   now?: Date;
+  sleep?: (ms: number) => Promise<void>;
+  retryDelaysMs?: readonly number[];
 };
 
 export async function emitWebhooks(input: EmitWebhooksInput): Promise<void> {
@@ -167,7 +172,6 @@ async function deliverOne(args: {
   db: PrismaClient;
 }): Promise<void> {
   const now = args.input.now ?? new Date();
-  const timestamp = String(Math.floor(now.getTime() / 1000));
   const idempotencyKey = `wh:${args.endpoint.id}:${args.input.event}:${args.input.idempotencySuffix}`;
   const envelope = {
     id: idempotencyKey,
@@ -176,11 +180,6 @@ async function deliverOne(args: {
     data: args.input.payload,
   };
   const body = JSON.stringify(envelope);
-  const signature = signWebhookPayload({
-    secret: args.endpoint.signingSecret,
-    timestamp,
-    body,
-  });
 
   let deliveryId: string;
   try {
@@ -192,7 +191,7 @@ async function deliverOne(args: {
         eventType: args.input.event,
         payload: envelope as Prisma.InputJsonValue,
         status: "PENDING",
-        attempts: 1,
+        attempts: 0,
         idempotencyKey,
       },
       select: { id: true },
@@ -206,36 +205,61 @@ async function deliverOne(args: {
   }
 
   const fetchImpl = args.input.fetchImpl ?? fetch;
-  try {
-    const response = await fetchImpl(args.endpoint.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-galaxy-signature": signature,
-        "x-galaxy-timestamp": timestamp,
-        "x-galaxy-event": args.input.event,
-        "x-galaxy-delivery-id": deliveryId,
-        "user-agent": "Galaxy-Webhooks/1.0",
-      },
-      body,
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) {
-      throw new Error(`Webhook endpoint returned ${response.status}`);
+  const sleep = args.input.sleep ?? delay;
+  const retryDelays = args.input.retryDelaysMs ?? WEBHOOK_RETRY_DELAYS_MS;
+  const maxAttempts = retryDelays.length + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (attempt > 1) {
+      await sleep(retryDelays[attempt - 2] ?? 0);
     }
-    await args.db.webhookDelivery.update({
-      where: { id: deliveryId },
-      data: { status: "DELIVERED", deliveredAt: new Date() },
+    const attemptTimestamp = String(Math.floor(Date.now() / 1000));
+    const attemptSignature = signWebhookPayload({
+      secret: args.endpoint.signingSecret,
+      timestamp: attemptTimestamp,
+      body,
     });
-  } catch (error) {
-    await args.db.webhookDelivery.update({
-      where: { id: deliveryId },
-      data: {
-        status: "FAILED",
-        lastError: error instanceof Error ? error.message.slice(0, 280) : "delivery failed",
-      },
-    });
+    try {
+      const response = await fetchImpl(args.endpoint.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-galaxy-signature": attemptSignature,
+          "x-galaxy-timestamp": attemptTimestamp,
+          "x-galaxy-event": args.input.event,
+          "x-galaxy-delivery-id": deliveryId,
+          "user-agent": "Galaxy-Webhooks/1.0",
+        },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Webhook endpoint returned ${response.status}`);
+      }
+      await args.db.webhookDelivery.update({
+        where: { id: deliveryId },
+        data: { status: "DELIVERED", attempts: attempt, deliveredAt: new Date(), lastError: null },
+      });
+      return;
+    } catch (error) {
+      const lastError = error instanceof Error ? error.message.slice(0, 280) : "delivery failed";
+      const finalAttempt = attempt === maxAttempts;
+      await args.db.webhookDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          status: finalAttempt ? "FAILED" : "PENDING",
+          attempts: attempt,
+          lastError,
+        },
+      });
+    }
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function toEndpointJson(row: {

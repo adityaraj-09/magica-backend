@@ -1,0 +1,51 @@
+---
+title: MCP server
+description: Connect an assistant to chats, runs, and Magica tools with the same API key.
+---
+
+`POST /api/mcp` speaks the Model Context Protocol over stateless HTTP. Send the same `Authorization: Bearer gxk_live_…` key as the REST API. A missing or revoked key returns HTTP `401`.
+
+```json
+{
+  "mcpServers": {
+    "galaxy": {
+      "url": "https://YOUR_BACKEND/api/mcp",
+      "headers": {
+        "Authorization": "Bearer gxk_live_…"
+      }
+    }
+  }
+}
+```
+
+## Start here
+
+<Steps>
+  <Step title="Create an API key">
+    Sign in and create a key on **API / MCP**. The `gxk_live_…` value is shown once.
+  </Step>
+  <Step title="Point the client at /api/mcp">
+    Use a client that can send a Bearer header (Cursor, Codex, or any Streamable HTTP client). The server answers `initialize`, `tools/list`, and `tools/call` with JSON. Notifications return `202`.
+  </Step>
+  <Step title="Call a tool">
+    `send_message` and `complete` queue a turn and return `runId`. Poll with `get_run`. `crop_image`, `gpt_image_2`, and `merge_videos` block until Magica finishes, same as the REST tools.
+  </Step>
+</Steps>
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_chats` | Newest chats. `q` searches title and message text. |
+| `get_chat` | One chat. Someone else's id is not found. |
+| `create_chat` | Optional `title`. |
+| `delete_chat` | Soft-delete. |
+| `list_messages` | History, newest first. |
+| `send_message` | Queue a turn in an existing chat. |
+| `complete` | Queue a turn. Omit `chatId` to create a chat. Accepts `text`, `prompt`, or `messages`. |
+| `get_run` | Run snapshot. No realtime token. |
+| `crop_image` | Magica crop. One complete rectangle. |
+| `gpt_image_2` | Generate, or edit when `image_url` is set. |
+| `merge_videos` | Merge 2–100 videos. `transition` is `none`, `fade`, or `dissolve`. |
+
+Tool failures come back as MCP `isError` text with the same codes as the REST API (`RUN_ACTIVE`, `UNAUTHORIZED`, `UNKNOWN_TOOL`, and the rest). They do not use a separate error envelope.

@@ -111,4 +111,63 @@ describe("emitWebhooks", () => {
     });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("retries a non-2xx response and delivers on the next attempt", async () => {
+    const update = vi.fn(async () => ({}));
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("no", { status: 500 }))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const sleep = vi.fn(async () => undefined);
+    await emitWebhooks({
+      userId: endpoint.userId,
+      event: "agent.started",
+      idempotencySuffix: "run_retry",
+      payload: { runId: "33333333-3333-3333-3333-333333333333" },
+      db: {
+        webhookEndpoint: { findMany: vi.fn(async () => [endpoint]) },
+        webhookDelivery: { create: vi.fn(async () => ({ id: "del_2" })), update },
+      } as never,
+      fetchImpl: fetchImpl as never,
+      sleep,
+      retryDelaysMs: [1_000, 5_000, 15_000],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1_000);
+    expect(update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "DELIVERED", attempts: 2 }),
+      }),
+    );
+  });
+
+  it("marks the delivery FAILED after the last attempt", async () => {
+    const update = vi.fn(async () => ({}));
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("The operation was aborted");
+    });
+    await emitWebhooks({
+      userId: endpoint.userId,
+      event: "agent.started",
+      idempotencySuffix: "run_fail",
+      payload: {},
+      db: {
+        webhookEndpoint: { findMany: vi.fn(async () => [endpoint]) },
+        webhookDelivery: { create: vi.fn(async () => ({ id: "del_3" })), update },
+      } as never,
+      fetchImpl: fetchImpl as never,
+      sleep: async () => undefined,
+      retryDelaysMs: [10, 20],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "FAILED",
+          attempts: 3,
+          lastError: "The operation was aborted",
+        }),
+      }),
+    );
+  });
 });

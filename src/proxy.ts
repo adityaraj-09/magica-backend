@@ -4,6 +4,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/health",
   "/api/webhooks/transloadit",
   "/api/v1(.*)",
+  "/api/mcp",
   "/__clerk(.*)",
 ]);
 
