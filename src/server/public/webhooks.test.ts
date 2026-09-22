@@ -3,7 +3,7 @@ import {
   emitWebhooks,
   signWebhookPayload,
   verifyWebhookSignature,
-} from "./webhooks.js";
+} from "./webhooks";
 
 const endpoint = {
   id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",

@@ -1,13 +1,13 @@
 import { logger, schemaTask } from "@trigger.dev/sdk";
-import { createE2BAdapter } from "@/agent/tools/adapters/e2b.js";
-import { sandboxRunCodeInputSchema } from "@/agent/tools/schemas.js";
-import type { E2BAdapter } from "@/agent/tools/adapters/types.js";
-import { childTrace, withSignal } from "./context.js";
-import { catchNonRetryableToolError } from "./errors.js";
-import { TASK_IDS } from "./ids.js";
-import { parseToolInput } from "./parse.js";
-import { e2bSandboxPayloadSchema } from "./payloads.js";
-import { e2bQueue } from "./queues.js";
+import { createE2BAdapter } from "@/agent/tools/adapters/e2b";
+import { sandboxRunCodeInputSchema } from "@/agent/tools/schemas";
+import type { E2BAdapter } from "@/agent/tools/adapters/types";
+import { childTrace, withSignal } from "./context";
+import { catchNonRetryableToolError } from "./errors";
+import { TASK_IDS } from "./ids";
+import { parseToolInput } from "./parse";
+import { e2bSandboxPayloadSchema } from "./payloads";
+import { e2bQueue } from "./queues";
 
 let e2b: E2BAdapter | undefined;
 

@@ -1,6 +1,6 @@
 import { Prisma, type User } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthError } from "./errors.js";
+import { AuthError } from "./errors";
 
 const { auth, currentUser, findUnique, createUser, createLedger, transaction } = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("@/server/db", () => ({
   },
 }));
 
-import { requireUser } from "./require-user.js";
+import { requireUser } from "./require-user";
 
 const user: User = {
   id: "11111111-1111-1111-1111-111111111111",

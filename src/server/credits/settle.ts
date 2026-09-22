@@ -1,10 +1,10 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db.js";
+import { prisma } from "@/server/db";
 import {
   runFinalizeIdempotencyKey,
   runRefundIdempotencyKey,
   toolSettleIdempotencyKey,
-} from "./keys.js";
+} from "./keys";
 
 export class CreditsError extends Error {
   readonly code = "CREDITS_INSUFFICIENT" as const;

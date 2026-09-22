@@ -1,14 +1,14 @@
 import { logger, schemaTask } from "@trigger.dev/sdk";
-import { createWebSearchAdapter } from "@/agent/tools/adapters/exa.js";
-import { webSearchInputSchema } from "@/agent/tools/schemas.js";
-import { ToolError } from "@/agent/tools/errors.js";
-import type { WebSearchAdapter } from "@/agent/tools/adapters/types.js";
-import { childTrace, withSignal } from "./context.js";
-import { catchNonRetryableToolError } from "./errors.js";
-import { TASK_IDS } from "./ids.js";
-import { parseToolInput } from "./parse.js";
-import { exaSearchPayloadSchema } from "./payloads.js";
-import { exaQueue } from "./queues.js";
+import { createWebSearchAdapter } from "@/agent/tools/adapters/exa";
+import { webSearchInputSchema } from "@/agent/tools/schemas";
+import { ToolError } from "@/agent/tools/errors";
+import type { WebSearchAdapter } from "@/agent/tools/adapters/types";
+import { childTrace, withSignal } from "./context";
+import { catchNonRetryableToolError } from "./errors";
+import { TASK_IDS } from "./ids";
+import { parseToolInput } from "./parse";
+import { exaSearchPayloadSchema } from "./payloads";
+import { exaQueue } from "./queues";
 
 let webSearch: WebSearchAdapter | undefined;
 

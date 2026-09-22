@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadRunSnapshot } from "./snapshot.js";
+import { loadRunSnapshot } from "./snapshot";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",
@@ -134,5 +134,56 @@ describe("loadRunSnapshot", () => {
     );
     expect(snapshot.waitpoint).toBeNull();
     expect(snapshot.realtimeToken).toBeUndefined();
+  });
+
+  it("auto-approves a leftover media waitpoint so Keep media never sticks", async () => {
+    const completeToken = vi.fn(async () => undefined);
+    runFindUnique.mockResolvedValue({
+      id: ids.runId,
+      chatId: ids.chatId,
+      userMessageId: ids.messageId,
+      status: "WAITING",
+      currentStep: "wait:media",
+      thinkingDurationMs: 40,
+      errorCode: null,
+      errorMessage: null,
+      triggerRunId: "run_trigger",
+      toolInvocations: [],
+      messages: [
+        {
+          id: ids.assistantId,
+          status: "STREAMING",
+          contentBlocks: [{ type: "asset", url: "https://cdn.example/out.png", mimeType: "image/png" }],
+        },
+      ],
+      waitpoints: [
+        {
+          id: ids.waitpointId,
+          type: "MEDIA",
+          status: "WAITING",
+          triggerWaitpointId: "waitpoint_tok",
+          publicAccessToken: "pat_wait",
+          timeoutAt: new Date("2099-01-01T00:00:00.000Z"),
+          payload: {},
+        },
+      ],
+    });
+
+    const snapshot = await loadRunSnapshot({
+      userId: ids.userId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      db: db() as never,
+      mintToken: false,
+      completeToken,
+    });
+
+    expect(completeToken).toHaveBeenCalledWith("waitpoint_tok");
+    expect(waitpointUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "COMPLETED" }),
+      }),
+    );
+    expect(snapshot.waitpoint).toBeNull();
   });
 });

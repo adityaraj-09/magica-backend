@@ -1,17 +1,17 @@
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
-import { parseContentBlocks } from "@/agent/runtime/content-blocks.js";
+import { parseContentBlocks } from "@/agent/runtime/content-blocks";
 import {
   overlayFromWaitpoint,
   progressFor,
   runMetadataSchema,
   type RunMetadata,
   type WaitpointOverlay,
-} from "@/agent/runtime/realtime.js";
-import { prisma } from "@/server/db.js";
-import { requireOwnedChat } from "@/server/chat/owned.js";
-import { HttpError } from "@/server/http/errors.js";
-import { createRunRealtimeToken } from "@/server/realtime/token.js";
+} from "@/agent/runtime/realtime";
+import { prisma } from "@/server/db";
+import { requireOwnedChat } from "@/server/chat/owned";
+import { HttpError } from "@/server/http/errors";
+import { createRunRealtimeToken } from "@/server/realtime/token";
 
 const uuid = z.string().uuid();
 
@@ -38,6 +38,7 @@ export async function loadRunSnapshot(input: {
   db?: PrismaClient;
   now?: Date;
   mintToken?: boolean;
+  completeToken?: (tokenId: string) => Promise<void>;
 }): Promise<RunSnapshotResponse> {
   const db = input.db ?? prisma;
   const chatId = uuid.parse(input.chatId);
@@ -74,7 +75,12 @@ export async function loadRunSnapshot(input: {
   }
 
   const now = input.now ?? new Date();
-  const waitpoint = await expireOpenWaitpoint(db, run.waitpoints[0], now);
+  const waitpoint = await expireOpenWaitpoint(
+    db,
+    run.waitpoints[0],
+    now,
+    input.completeToken ?? defaultCompleteMediaToken,
+  );
   const assistant = run.messages[0] ?? null;
 
   const metadata: RunMetadata = {
@@ -134,12 +140,36 @@ async function expireOpenWaitpoint(
       }
     | undefined,
   now: Date,
+  completeToken?: (tokenId: string) => Promise<void>,
 ): Promise<WaitpointOverlay | null> {
   if (!open) return null;
+  if (open.type === "MEDIA") {
+    if (completeToken) {
+      try {
+        await completeToken(open.triggerWaitpointId);
+      } catch {
+        // Hide the leftover card even if the worker token is already gone.
+      }
+    }
+    await db.waitpoint.update({
+      where: { id: open.id },
+      data: {
+        status: "COMPLETED",
+        completedAt: now,
+        result: { status: "approved", approved: true } as never,
+      },
+    });
+    return null;
+  }
   if (open.timeoutAt > now) return overlayFromWaitpoint(open);
-  await db.waitpoint.update({
+    await db.waitpoint.update({
     where: { id: open.id },
     data: { status: "EXPIRED", completedAt: now },
   });
   return null;
+}
+
+async function defaultCompleteMediaToken(tokenId: string): Promise<void> {
+  const { wait } = await import("@trigger.dev/sdk");
+  await wait.completeToken(tokenId, { status: "approved", approved: true });
 }

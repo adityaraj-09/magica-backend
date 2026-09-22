@@ -4,7 +4,7 @@ import {
   progressFor,
   runMetadataSchema,
   upsertToolLive,
-} from "./realtime.js";
+} from "./realtime";
 
 describe("run metadata", () => {
   it("maps live status to progress", () => {

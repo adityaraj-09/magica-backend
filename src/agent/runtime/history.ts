@@ -1,19 +1,19 @@
 import {
   toAssistantToolCallMessage,
   toToolResultMessage,
-} from "@/agent/llm/messages.js";
-import type { LlmMessage } from "@/agent/llm/types.js";
+} from "@/agent/llm/messages";
+import type { LlmMessage } from "@/agent/llm/types";
 import {
   parseContentBlocks,
   type ContentBlock,
-} from "./content-blocks.js";
+} from "./content-blocks";
 
 export type HistoryMessage = {
   role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
   status: string;
   contentBlocks: unknown;
   searchText: string;
-  attachments?: Array<{ url: string; mimeType: string }>;
+  attachments?: Array<{ url: string; mimeType: string; filename?: string }>;
 };
 
 const IMAGE_MIME = /^image\//;
@@ -64,8 +64,9 @@ export function messagesToLlm(history: HistoryMessage[]): LlmMessage[] {
 }
 
 function userMessage(message: HistoryMessage): LlmMessage {
-  const text = textOf(message);
-  const images = (message.attachments ?? []).filter((file) => IMAGE_MIME.test(file.mimeType));
+  const files = attachedFiles(message);
+  const text = [textOf(message), attachmentListing(files)].filter(Boolean).join("\n\n");
+  const images = files.filter((file) => IMAGE_MIME.test(file.mimeType));
   if (images.length === 0) {
     return { role: "user", content: text };
   }
@@ -79,6 +80,31 @@ function userMessage(message: HistoryMessage): LlmMessage {
       })),
     ],
   };
+}
+
+function attachedFiles(message: HistoryMessage): Array<{ url: string; mimeType: string; filename?: string }> {
+  const seen = new Set<string>();
+  const files: Array<{ url: string; mimeType: string; filename?: string }> = [];
+  const push = (file: { url: string; mimeType: string; filename?: string }) => {
+    if (!file.url || seen.has(file.url)) return;
+    seen.add(file.url);
+    files.push(file);
+  };
+  for (const file of message.attachments ?? []) push(file);
+  for (const block of parseContentBlocks(message.contentBlocks)) {
+    if (block.type === "asset") {
+      push({ url: block.url, mimeType: block.mimeType, filename: block.filename });
+    }
+  }
+  return files;
+}
+
+function attachmentListing(files: Array<{ url: string; mimeType: string; filename?: string }>): string {
+  if (files.length === 0) return "";
+  return [
+    "Attached files (already visible). Use these URLs only if a tool is actually required. Do not ask the user for a URL.",
+    ...files.map((file) => `- ${file.filename || file.mimeType}: ${file.url}`),
+  ].join("\n");
 }
 
 export function assistantBlocksToLlm(

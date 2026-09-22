@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TOOL_NAMES } from "./types.js";
+import { TOOL_NAMES } from "./types";
 
 const urlSchema = z.string().url();
 
@@ -188,7 +188,7 @@ export const TOOL_DESCRIPTIONS: Record<
   [TOOL_NAMES.mergeVideos]:
     "Merge 2–100 videos in the given order. Transition may be none, fade, or dissolve.",
   [TOOL_NAMES.sandboxRunCode]:
-    "Run Python or bash in an isolated sandbox. Optional input files are written under /home/user/work. Write generated files to /home/user/artifacts to return them as downloadable assets.",
+    "Run Python or bash for computation that is not image or video editing. Do not use this to crop, inspect, or download user images; those files are not in the sandbox. Use crop_image with the attached image URL instead.",
   [TOOL_NAMES.loadSkill]:
     "Load the full SKILL.md body for a named application skill. Call only when that skill is needed this turn.",
   [TOOL_NAMES.readSkillAsset]:

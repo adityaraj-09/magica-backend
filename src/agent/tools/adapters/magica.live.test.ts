@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createMagicaAdapter } from "./magica.js";
-import { gptImage2InputSchema } from "../schemas.js";
-import type { ToolExecutionContext } from "../types.js";
+import { createMagicaAdapter } from "./magica";
+import { gptImage2InputSchema } from "../schemas";
+import type { ToolExecutionContext } from "../types";
 
 const live = process.env.MAGICA_LIVE === "1" && Boolean(process.env.MAGICA_API_KEY?.trim());
 

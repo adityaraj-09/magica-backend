@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
-import { listCreditLedger } from "./ledger.js";
-import { encodeCursor } from "@/server/http/cursor.js";
+import { listCreditLedger } from "./ledger";
+import { encodeCursor } from "@/server/http/cursor";
 
 const ids = {
   userId: "22222222-2222-2222-2222-222222222222",

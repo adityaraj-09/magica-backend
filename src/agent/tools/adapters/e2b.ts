@@ -1,15 +1,15 @@
 import path from "node:path";
 import { Sandbox } from "@e2b/code-interpreter";
-import { ToolError } from "../errors.js";
-import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
+import { ToolError } from "../errors";
+import type { ToolExecutionContext, ToolExecutionResult } from "../types";
 import {
   sandboxRunCodeInputSchema,
   sandboxRunCodeOutputSchema,
   type SandboxRunCodeInput,
   type SandboxRunCodeOutput,
-} from "../schemas.js";
-import type { E2BAdapter } from "./types.js";
-import { isAbortError, throwIfAborted } from "./http.js";
+} from "../schemas";
+import type { E2BAdapter } from "./types";
+import { isAbortError, throwIfAborted } from "./http";
 
 const WORK_DIR = "/home/user/work";
 const ARTIFACT_DIR = "/home/user/artifacts";

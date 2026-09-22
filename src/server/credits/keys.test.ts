@@ -3,8 +3,8 @@ import {
   runFinalizeIdempotencyKey,
   runRefundIdempotencyKey,
   toolSettleIdempotencyKey,
-} from "./keys.js";
-import { reserveIdempotencyKey } from "./reserve.js";
+} from "./keys";
+import { reserveIdempotencyKey } from "./reserve";
 
 describe("credit ledger keys", () => {
   it("are stable charge-once keys", () => {

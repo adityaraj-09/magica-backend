@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolError } from "@/agent/tools/errors.js";
+import { ToolError } from "@/agent/tools/errors";
 
 export function parseToolInput<S extends z.ZodType>(
   schema: S,

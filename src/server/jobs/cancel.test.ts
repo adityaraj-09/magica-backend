@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@trigger.dev/sdk", () => ({
-  runs: { cancel: vi.fn() },
+  runs: { cancel: vi.fn(), retrieve: vi.fn() },
 }));
 vi.mock("@/server/db.js", () => ({
   prisma: {},
 }));
 
-import { cancelRun } from "./cancel.js";
+import { cancelRun } from "./cancel";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",
@@ -85,6 +85,23 @@ describe("cancelRun", () => {
       }),
     );
     expect(cancelTrigger).toHaveBeenCalledWith("tr_run_1");
+  });
+
+  it("finalizes CANCELLED when Trigger already stopped the run", async () => {
+    const result = await cancelRun({
+      userId: ids.userId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      db: db() as never,
+      cancelTrigger: async () => undefined,
+      readTriggerStatus: async () => "CANCELED",
+    });
+    expect(result.status).toBe("CANCELLED");
+    expect(runUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "CANCELLED", errorCode: "CANCELLED" }),
+      }),
+    );
   });
 
   it("cancels a queued run immediately when Trigger has not started", async () => {

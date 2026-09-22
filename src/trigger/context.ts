@@ -1,5 +1,5 @@
-import type { ToolExecutionContext, ToolExecutionResult } from "@/agent/tools/types.js";
-import type { toolExecutionContextSchema } from "./payloads.js";
+import type { ToolExecutionContext, ToolExecutionResult } from "@/agent/tools/types";
+import type { toolExecutionContextSchema } from "./payloads";
 import type { z } from "zod";
 
 type PayloadContext = z.infer<typeof toolExecutionContextSchema>;

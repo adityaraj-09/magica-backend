@@ -1,4 +1,4 @@
-import { LlmError } from "./errors.js";
+import { LlmError } from "./errors";
 
 /** Yields `data:` payloads from an SSE body. Comments (`: ...`) are skipped. */
 export async function* iterateSseData(

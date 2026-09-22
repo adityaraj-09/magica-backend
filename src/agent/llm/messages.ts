@@ -3,7 +3,7 @@ import type {
   LlmToolCallProposal,
   LlmToolMessage,
   LlmWireToolCall,
-} from "./types.js";
+} from "./types";
 
 export function toAssistantToolCallMessage(
   calls: LlmToolCallProposal[],

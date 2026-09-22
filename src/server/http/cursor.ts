@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { HttpError } from "@/server/http/errors.js";
+import { HttpError } from "@/server/http/errors";
 
 export const paginationQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),

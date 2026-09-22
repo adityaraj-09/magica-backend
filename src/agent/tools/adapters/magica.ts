@@ -1,5 +1,5 @@
-import { ToolError } from "../errors.js";
-import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
+import { ToolError } from "../errors";
+import type { ToolExecutionContext, ToolExecutionResult } from "../types";
 import {
   cropImageInputSchema,
   cropImageOutputSchema,
@@ -13,8 +13,8 @@ import {
   type GptImage2Output,
   type MergeVideosInput,
   type MergeVideosOutput,
-} from "../schemas.js";
-import type { MagicaAdapter } from "./types.js";
+} from "../schemas";
+import type { MagicaAdapter } from "./types";
 import {
   isAbortError,
   providerHttpError,
@@ -22,7 +22,7 @@ import {
   sleep,
   throwIfAborted,
   withTimeout,
-} from "./http.js";
+} from "./http";
 
 const DEFAULT_BASE_URL = "https://inference.magica.com";
 const DEFAULT_POLL_INTERVAL_MS = 2_000;

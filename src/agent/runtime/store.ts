@@ -1,12 +1,12 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { GeneratedAsset } from "@/agent/tools/types.js";
+import type { GeneratedAsset } from "@/agent/tools/types";
 import {
   parseContentBlocks,
   searchTextFromBlocks,
   type ContentBlock,
-} from "./content-blocks.js";
-import type { HistoryMessage } from "./history.js";
-import { overlayFromWaitpoint, type WaitpointOverlay } from "./realtime.js";
+} from "./content-blocks";
+import type { HistoryMessage } from "./history";
+import { overlayFromWaitpoint, type WaitpointOverlay } from "./realtime";
 
 export type RunSnapshot = {
   id: string;
@@ -97,7 +97,7 @@ export class AgentStore {
         attachments: {
           orderBy: { sortOrder: "asc" },
           select: {
-            attachment: { select: { url: true, mimeType: true } },
+            attachment: { select: { url: true, mimeType: true, filename: true } },
           },
         },
       },
@@ -110,10 +110,14 @@ export class AgentStore {
       attachments: row.attachments
         .map((link) =>
           link.attachment.url
-            ? { url: link.attachment.url, mimeType: link.attachment.mimeType }
+            ? {
+                url: link.attachment.url,
+                mimeType: link.attachment.mimeType,
+                filename: link.attachment.filename,
+              }
             : null,
         )
-        .filter((file): file is { url: string; mimeType: string } => file !== null),
+        .filter((file): file is { url: string; mimeType: string; filename: string } => file !== null),
     }));
   }
 
@@ -171,6 +175,29 @@ export class AgentStore {
     const row = await this.prisma.toolInvocation.findUnique({
       where: { agentRunId_toolCallId: { agentRunId: runId, toolCallId } },
     });
+    if (!row) return null;
+    return {
+      id: row.id,
+      toolCallId: row.toolCallId,
+      toolName: row.toolName,
+      status: row.status,
+      input: row.input,
+      output: row.output,
+      creditCost: row.creditCost.toString(),
+      errorMessage: row.errorMessage,
+    };
+  }
+
+  async findSuccessfulToolByInput(
+    runId: string,
+    toolName: string,
+    input: unknown,
+  ): Promise<ToolInvocationSnapshot | null> {
+    const rows = await this.prisma.toolInvocation.findMany({
+      where: { agentRunId: runId, toolName, status: "SUCCESS" },
+    });
+    const key = stableJson(input);
+    const row = rows.find((item) => stableJson(item.input) === key);
     if (!row) return null;
     return {
       id: row.id,
@@ -379,6 +406,21 @@ export class AgentStore {
     return toWaitpointSnapshot(expired);
   }
 
+  async getChatTitle(chatId: string): Promise<string | null> {
+    const chat = await this.prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { title: true },
+    });
+    return chat?.title ?? null;
+  }
+
+  async renameChat(chatId: string, title: string): Promise<void> {
+    await this.prisma.chat.update({
+      where: { id: chatId },
+      data: { title },
+    });
+  }
+
   async updateRun(input: {
     runId: string;
     chatId: string;
@@ -434,6 +476,16 @@ export class AgentStore {
         : []),
     ]);
   }
+}
+
+export function stableJson(value: unknown): string {
+  if (value == null || typeof value !== "object") return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`;
 }
 
 function toWaitpointSnapshot(row: {

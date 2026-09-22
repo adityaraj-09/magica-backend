@@ -1,7 +1,7 @@
 import type { User } from "@prisma/client";
-import { HttpError } from "@/server/http/errors.js";
-import { requireApiUser } from "@/server/public/api-keys.js";
-import { MCP_TOOLS, callMcpTool } from "./tools.js";
+import { HttpError } from "@/server/http/errors";
+import { requireApiUser } from "@/server/public/api-keys";
+import { MCP_TOOLS, callMcpTool } from "./tools";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 

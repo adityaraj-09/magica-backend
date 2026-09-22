@@ -1,6 +1,6 @@
-import { ToolError } from "@/agent/tools/errors.js";
-import type { ToolRegistry } from "@/agent/tools/registry.js";
-import type { ToolExecutionContext, ToolExecutionResult, ToolProvider } from "@/agent/tools/types.js";
+import { ToolError } from "@/agent/tools/errors";
+import type { ToolRegistry } from "@/agent/tools/registry";
+import type { ToolExecutionContext, ToolExecutionResult, ToolProvider } from "@/agent/tools/types";
 
 export type ChildToolRequest = {
   provider: ToolProvider;

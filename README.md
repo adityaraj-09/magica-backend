@@ -27,7 +27,7 @@ Optional: `EXA_API_KEY` (otherwise web search is stubbed), `S3_*` (R2-compatible
 pnpm db:migrate
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/sql/0001_constraints.sql
 pnpm trigger:dev   # separate terminal
-pnpm dev           # http://localhost:3000
+pnpm dev           # http://localhost:4000
 ```
 
 ```bash

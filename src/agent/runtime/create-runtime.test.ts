@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SkillRegistry } from "@/agent/skills/registry.js";
+import { SkillRegistry } from "@/agent/skills/registry";
 import {
   createSkillLoaderAdapter,
   resetSkillLoaderAdapter,
-} from "@/agent/tools/adapters/skills.js";
-import { createAgentRuntime, resetAgentRuntime } from "./create-runtime.js";
+} from "@/agent/tools/adapters/skills";
+import { createAgentRuntime, resetAgentRuntime } from "./create-runtime";
 
 function testEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
   return {

@@ -1,10 +1,10 @@
-import { ToolError, toolErrorFromUnknown } from "@/agent/tools/errors.js";
-import type { ToolExecutionResult } from "@/agent/tools/types.js";
-import type { ChildTaskRunner, ChildToolRequest } from "@/agent/runtime/execute-tool.js";
-import type { MagicaToolPayload, E2BSandboxPayload, ExaSearchPayload } from "./payloads.js";
-import { executeE2BSandbox } from "./e2b.js";
-import { executeExaSearch } from "./exa.js";
-import { executeMagicaTool } from "./magica.js";
+import { ToolError, toolErrorFromUnknown } from "@/agent/tools/errors";
+import type { ToolExecutionResult } from "@/agent/tools/types";
+import type { ChildTaskRunner, ChildToolRequest } from "@/agent/runtime/execute-tool";
+import type { MagicaToolPayload, E2BSandboxPayload, ExaSearchPayload } from "./payloads";
+import { executeE2BSandbox } from "./e2b";
+import { executeExaSearch } from "./exa";
+import { executeMagicaTool } from "./magica";
 
 type SubscribableTask<TPayload, TOutput> = {
   triggerAndSubscribe: (

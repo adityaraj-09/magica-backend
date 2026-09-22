@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ToolError } from "../tools/errors.js";
+import { ToolError } from "../tools/errors";
 
 const MAX_RELATIVE_LENGTH = 256;
 const MAX_DEPTH = 6;

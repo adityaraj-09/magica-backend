@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ToolError } from "@/agent/tools/errors.js";
+import { ToolError } from "@/agent/tools/errors";
 
 const magicaSubscribe = vi.hoisted(() => vi.fn());
 const e2bSubscribe = vi.hoisted(() => vi.fn());
@@ -15,7 +15,7 @@ vi.mock("./exa.js", () => ({
   executeExaSearch: { triggerAndSubscribe: exaSubscribe },
 }));
 
-import { triggerChildTasks } from "./child-runner.js";
+import { triggerChildTasks } from "./child-runner";
 
 function ctx(signal = new AbortController().signal) {
   return {

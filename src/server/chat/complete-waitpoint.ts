@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { wait } from "@trigger.dev/sdk";
 import type { PrismaClient } from "@prisma/client";
-import type { WaitpointOverlay } from "@/agent/runtime/realtime.js";
-import { requireOwnedChat } from "@/server/chat/owned.js";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
+import type { WaitpointOverlay } from "@/agent/runtime/realtime";
+import { requireOwnedChat } from "@/server/chat/owned";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
 
 export const completeWaitpointBodySchema = z.object({
   decision: z.enum(["approved", "rejected"]),

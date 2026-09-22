@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { parseContentBlocks } from "@/agent/runtime/content-blocks.js";
-import { prisma } from "@/server/db.js";
-import { requireOwnedChat } from "@/server/chat/owned.js";
+import { parseContentBlocks } from "@/agent/runtime/content-blocks";
+import { prisma } from "@/server/db";
+import { requireOwnedChat } from "@/server/chat/owned";
 import {
   createdAtIdWhere,
   decodeCursor,
   encodeCursor,
   paginationQuerySchema,
-} from "@/server/http/cursor.js";
+} from "@/server/http/cursor";
 
 export const createChatBodySchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),

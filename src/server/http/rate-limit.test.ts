@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseSendRateLimit } from "./rate-limit.js";
+import { parseSendRateLimit } from "./rate-limit";
 
 describe("parseSendRateLimit", () => {
   it("defaults to 20 sends per 60 seconds", () => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "@/server/http/errors.js";
-import { ToolError } from "@/agent/tools/errors.js";
+import { HttpError } from "@/server/http/errors";
+import { ToolError } from "@/agent/tools/errors";
 
 const execute = vi.hoisted(() => vi.fn());
 const persist = vi.hoisted(() => vi.fn());
@@ -16,7 +16,7 @@ vi.mock("./webhooks.js", () => ({
   emitWebhooks,
 }));
 
-import { executePublicMagicaTool } from "./magica.js";
+import { executePublicMagicaTool } from "./magica";
 
 describe("executePublicMagicaTool", () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTriggerWaitpoints, timeoutDate } from "./waitpoints.js";
-import type { AgentStore } from "@/agent/runtime/store.js";
+import { createTriggerWaitpoints, timeoutDate } from "./waitpoints";
+import type { AgentStore } from "@/agent/runtime/store";
 
 const { createToken, forToken } = vi.hoisted(() => ({
   createToken: vi.fn(),

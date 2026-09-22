@@ -1,6 +1,6 @@
 import { Prisma, type User } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpError } from "@/server/http/errors.js";
+import { HttpError } from "@/server/http/errors";
 
 const {
   dispatchAgentTurn,
@@ -47,7 +47,7 @@ vi.mock("@/server/db.js", () => ({
   },
 }));
 
-import { admitTurn } from "./admit-turn.js";
+import { admitTurn } from "./admit-turn";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",

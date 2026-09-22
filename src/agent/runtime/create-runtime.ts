@@ -1,13 +1,13 @@
-import { createE2BAdapter } from "@/agent/tools/adapters/e2b.js";
-import { createWebSearchAdapter } from "@/agent/tools/adapters/exa.js";
-import { createMagicaAdapter } from "@/agent/tools/adapters/magica.js";
+import { createE2BAdapter } from "@/agent/tools/adapters/e2b";
+import { createWebSearchAdapter } from "@/agent/tools/adapters/exa";
+import { createMagicaAdapter } from "@/agent/tools/adapters/magica";
 import {
   createSkillLoaderAdapter,
   resetSkillLoaderAdapter,
-} from "@/agent/tools/adapters/skills.js";
-import type { SkillLoaderAdapter } from "@/agent/tools/adapters/types.js";
-import { createToolRegistry } from "@/agent/tools/catalog.js";
-import type { ToolRegistry } from "@/agent/tools/registry.js";
+} from "@/agent/tools/adapters/skills";
+import type { SkillLoaderAdapter } from "@/agent/tools/adapters/types";
+import { createToolRegistry } from "@/agent/tools/catalog";
+import type { ToolRegistry } from "@/agent/tools/registry";
 
 export type AgentRuntime = {
   registry: ToolRegistry;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTurnReserve, reserveIdempotencyKey } from "./reserve.js";
+import { parseTurnReserve, reserveIdempotencyKey } from "./reserve";
 
 describe("parseTurnReserve", () => {
   it("requires CREDIT_RESERVE_TURN", () => {

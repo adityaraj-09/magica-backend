@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ToolError } from "../errors.js";
-import { gptImage2InputSchema } from "../schemas.js";
-import type { ToolExecutionContext } from "../types.js";
-import { MagicaApiAdapter } from "./magica.js";
+import { ToolError } from "../errors";
+import { gptImage2InputSchema } from "../schemas";
+import type { ToolExecutionContext } from "../types";
+import { MagicaApiAdapter } from "./magica";
 
 const ctxBase = {
   chatId: "11111111-1111-1111-1111-111111111111",

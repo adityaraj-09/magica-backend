@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialGrantIdempotencyKey, parseInitialCreditGrant } from "./grant.js";
+import { initialGrantIdempotencyKey, parseInitialCreditGrant } from "./grant";
 
 describe("parseInitialCreditGrant", () => {
   it("requires CREDIT_GRANT_INITIAL", () => {

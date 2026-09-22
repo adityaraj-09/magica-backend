@@ -1,5 +1,5 @@
-import { TOOL_NAMES } from "./types.js";
-import { TOOL_DESCRIPTIONS } from "./schemas.js";
+import { TOOL_NAMES } from "./types";
+import { TOOL_DESCRIPTIONS } from "./schemas";
 import {
   cropImageInputSchema,
   cropImageOutputSchema,
@@ -15,9 +15,9 @@ import {
   sandboxRunCodeOutputSchema,
   webSearchInputSchema,
   webSearchOutputSchema,
-} from "./schemas.js";
-import type { ToolAdapters } from "./adapters/types.js";
-import { ToolRegistry } from "./registry.js";
+} from "./schemas";
+import type { ToolAdapters } from "./adapters/types";
+import { ToolRegistry } from "./registry";
 
 const ZERO_CREDITS = "0";
 

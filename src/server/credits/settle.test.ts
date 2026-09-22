@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { finalizeRunCredits, remainingSpendable, settleToolCharge } from "./settle.js";
+import { finalizeRunCredits, remainingSpendable, settleToolCharge } from "./settle";
 
 const ids = {
   userId: "22222222-2222-2222-2222-222222222222",

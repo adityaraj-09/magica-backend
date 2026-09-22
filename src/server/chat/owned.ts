@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
 
 const uuid = z.string().uuid();
 

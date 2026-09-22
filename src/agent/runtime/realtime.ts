@@ -47,6 +47,12 @@ export const waitpointOverlaySchema = z.object({
   payload: z.unknown(),
 });
 
+export const liveAssistantSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  contentBlocks: z.array(z.unknown()),
+});
+
 export const runMetadataSchema = z.object({
   chatId: z.string().uuid(),
   runId: z.string().uuid(),
@@ -58,6 +64,7 @@ export const runMetadataSchema = z.object({
   progressPercent: z.number().int().min(0).max(100).nullable(),
   tools: z.array(toolLiveSchema),
   waitpoint: waitpointOverlaySchema.nullable(),
+  assistant: liveAssistantSchema.nullable().optional(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
 });

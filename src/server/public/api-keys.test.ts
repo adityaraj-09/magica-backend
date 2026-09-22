@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { API_KEY_PREFIX, generateApiKey, hashApiKey, requireApiUser } from "./api-keys.js";
+import { API_KEY_PREFIX, generateApiKey, hashApiKey, requireApiUser } from "./api-keys";
 
 describe("api keys", () => {
   it("hashes a generated key and authenticates it", async () => {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TOOL_NAMES } from "@/agent/tools/types.js";
+import { TOOL_NAMES } from "@/agent/tools/types";
 
 export const toolExecutionContextSchema = z.object({
   chatId: z.string().uuid(),

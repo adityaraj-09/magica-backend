@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/server/auth/require-user";
+import { HttpError } from "@/server/http/errors";
 import { jsonError } from "@/server/http/json-error";
 import { persistAssembly } from "@/server/uploads/transloadit";
 
@@ -14,6 +15,9 @@ export async function POST(request: Request, context: RouteContext) {
     const body: unknown = await request.json().catch(() => null);
     const assembly = unwrapAssembly(body);
     const result = await persistAssembly({ userId: user.id, chatId, assembly });
+    if (result.attachments.length === 0) {
+      throw new HttpError("Upload finished without a file", 422, "UPLOAD_EMPTY");
+    }
     return NextResponse.json(result);
   } catch (error) {
     return jsonError(error);

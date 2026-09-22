@@ -1,13 +1,13 @@
-import { ToolError } from "../errors.js";
-import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
-import type { WebSearchAdapter } from "./types.js";
+import { ToolError } from "../errors";
+import type { ToolExecutionContext, ToolExecutionResult } from "../types";
+import type { WebSearchAdapter } from "./types";
 import {
   webSearchInputSchema,
   webSearchOutputSchema,
   type WebSearchInput,
   type WebSearchOutput,
-} from "../schemas.js";
-import { isAbortError, providerHttpError, throwIfAborted, withTimeout } from "./http.js";
+} from "../schemas";
+import { isAbortError, providerHttpError, throwIfAborted, withTimeout } from "./http";
 
 type ExaSearchHit = {
   title?: string | null;

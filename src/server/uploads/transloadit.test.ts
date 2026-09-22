@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { HttpError } from "@/server/http/errors.js";
+import { HttpError } from "@/server/http/errors";
 import {
   COMMUNITY_MAX_FILE_BYTES,
   hmacSignature,
@@ -9,7 +9,7 @@ import {
   signAssemblyParams,
   signChatUpload,
   verifyTransloaditSignature,
-} from "./transloadit.js";
+} from "./transloadit";
 
 const ids = {
   userId: "22222222-2222-2222-2222-222222222222",
@@ -87,6 +87,7 @@ describe("persistAssembly", () => {
             mime: "image/png",
             size: 1200,
             ssl_url: "https://tmp.example/shot.png",
+            meta: { width: 800, height: 600, duration: null },
           },
           {
             id: "file_big",

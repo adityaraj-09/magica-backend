@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
-import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types.js";
-import type { ChatClient, ChatCompletionResult } from "@/agent/llm/types.js";
-import { ToolError } from "@/agent/tools/errors.js";
-import { ToolRegistry } from "@/agent/tools/registry.js";
+import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types";
+import type { ChatClient, ChatCompletionResult } from "@/agent/llm/types";
+import { ToolError } from "@/agent/tools/errors";
+import { ToolRegistry } from "@/agent/tools/registry";
 import {
   cropImageInputSchema,
   cropImageOutputSchema,
@@ -11,12 +11,12 @@ import {
   gptImage2OutputSchema,
   loadSkillInputSchema,
   loadSkillOutputSchema,
-} from "@/agent/tools/schemas.js";
-import { TOOL_NAMES } from "@/agent/tools/types.js";
-import { runAgentLoop, type AgentLoopDeps } from "./loop.js";
-import type { AgentStore, RunSnapshot } from "./store.js";
-import type { ContentBlock } from "./content-blocks.js";
-import { LLM_TOOL_RESULT_MAX_CHARS } from "./history.js";
+} from "@/agent/tools/schemas";
+import { TOOL_NAMES } from "@/agent/tools/types";
+import { runAgentLoop, type AgentLoopDeps } from "./loop";
+import type { AgentStore, RunSnapshot } from "./store";
+import type { ContentBlock } from "./content-blocks";
+import { LLM_TOOL_RESULT_MAX_CHARS } from "./history";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",
@@ -112,6 +112,7 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
       blocks = input.blocks;
     }),
     getToolInvocation: vi.fn(async () => null),
+    findSuccessfulToolByInput: vi.fn(async () => null),
     nextToolSequence: vi.fn(async () => 1),
     upsertToolInvocation: vi.fn(async () => ({ id: "inv_1" })),
     saveRunSkill: vi.fn(async (input: (typeof skills)[number]) => {
@@ -123,6 +124,8 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
     getWaitpoint: vi.fn(async () => null),
     spentCredits: vi.fn(async () => new Prisma.Decimal(0)),
     updateRun: vi.fn(async () => undefined),
+    getChatTitle: vi.fn(async () => "Existing title"),
+    renameChat: vi.fn(async () => undefined),
     skills,
   };
 
@@ -468,7 +471,7 @@ describe("runAgentLoop", () => {
     );
   });
 
-  it("opens a media waitpoint after generated assets", async () => {
+  it("keeps generated assets in the thread without a media waitpoint", async () => {
     const registry = new ToolRegistry();
     registry.register({
       name: TOOL_NAMES.cropImage,
@@ -544,15 +547,63 @@ describe("runAgentLoop", () => {
         ],
       }),
     );
-    expect(awaitApproval).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "MEDIA",
-        idempotencyKey: `run:${ids.runId}:wait:media:1`,
-        payload: expect.objectContaining({
-          assets: [expect.objectContaining({ url: "https://cdn.galaxy.test/generated/out.png" })],
-        }),
-      }),
+    expect(awaitApproval).not.toHaveBeenCalled();
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs an identical crop only once when the model proposes it twice", async () => {
+    const execute = vi.fn(async () => ({
+      output: { image_url: "https://cdn.example/out.png" },
+      creditCost: "0",
+      durationMs: 2,
+      assets: [{ url: "https://cdn.example/out.png", mimeType: "image/png" }],
+    }));
+    const cropArgs = {
+      image_url: "https://cdn.example/in.png",
+      x_percent: 0,
+      y_percent: 0,
+      width_percent: 50,
+      height_percent: 50,
+    };
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.cropImage,
+      description: "Crop",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: cropImageInputSchema,
+      output: cropImageOutputSchema,
+      estimateCredits: () => "0",
+      execute,
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              { id: "call_crop_a", name: "crop_image", arguments: cropArgs, rawArguments: "{}" },
+              { id: "call_crop_b", name: "crop_image", arguments: cropArgs, rawArguments: "{}" },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(completion({ text: "cropped", finishReason: "stop" })),
+    };
+    const persist = vi.fn(async (input: { assets: Array<{ url: string; mimeType: string }> }) =>
+      input.assets.map((asset) => ({
+        ...asset,
+        url: "https://cdn.galaxy.test/generated/out.png",
+        storageKey: "generated/out.png",
+        byteSize: 12,
+      })),
     );
+    const deps = createDeps(llm, { registry, assets: { persist } });
+    await runAgentLoop(turn, deps);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 
   it("finalizes credits on a completed turn", async () => {

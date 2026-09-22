@@ -1,4 +1,4 @@
-import type { LlmMalformedToolCall, LlmToolCallProposal } from "./types.js";
+import type { LlmMalformedToolCall, LlmToolCallProposal } from "./types";
 
 export type ToolCallDelta = {
   index?: number;

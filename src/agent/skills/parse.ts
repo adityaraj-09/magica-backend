@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { ToolError } from "../tools/errors.js";
+import { ToolError } from "../tools/errors";
 
 const frontmatterSchema = z.object({
   name: z

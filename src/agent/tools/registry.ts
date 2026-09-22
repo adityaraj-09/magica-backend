@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ToolError } from "./errors.js";
-import { toOpenRouterParameters } from "./json-schema.js";
+import { ToolError } from "./errors";
+import { toOpenRouterParameters } from "./json-schema";
 import type {
   AnyToolDefinition,
   OpenRouterTool,
@@ -8,8 +8,8 @@ import type {
   ToolExecutionContext,
   ToolExecutionResult,
   ToolName,
-} from "./types.js";
-import { toolNameSchema } from "./types.js";
+} from "./types";
+import { toolNameSchema } from "./types";
 
 /**
  * Authoritative tool catalog. Discovery, Zod validation, credit estimates,

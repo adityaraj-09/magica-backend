@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAssetGateway, objectKey, persistAssets } from "./copy.js";
-import { s3ConfigFromEnv } from "./s3.js";
-import type { ObjectStore } from "./types.js";
+import { createAssetGateway, objectKey, persistAssets } from "./copy";
+import { s3ConfigFromEnv } from "./s3";
+import type { ObjectStore } from "./types";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",

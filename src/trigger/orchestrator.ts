@@ -1,18 +1,18 @@
 import { logger, schemaTask } from "@trigger.dev/sdk";
-import { createOpenRouterClient } from "@/agent/llm/openrouter.js";
-import { createAgentRuntime } from "@/agent/runtime/create-runtime.js";
-import { runAgentLoop } from "@/agent/runtime/loop.js";
-import { AgentStore } from "@/agent/runtime/store.js";
-import { prisma } from "@/server/db.js";
-import { triggerChildTasks } from "./child-runner.js";
-import { TASK_IDS } from "./ids.js";
-import { agentTurnPayloadSchema } from "./payloads.js";
-import { agentTurnsQueue } from "./queues.js";
-import { createTriggerRealtime } from "./realtime.js";
-import { createTriggerWaitpoints } from "./waitpoints.js";
-import { createCreditGateway } from "@/server/credits/settle.js";
-import { createAssetGateway } from "@/server/storage/copy.js";
-import { createWebhookGateway } from "@/server/public/webhooks.js";
+import { createOpenRouterClient } from "@/agent/llm/openrouter";
+import { createAgentRuntime } from "@/agent/runtime/create-runtime";
+import { runAgentLoop } from "@/agent/runtime/loop";
+import { AgentStore } from "@/agent/runtime/store";
+import { prisma } from "@/server/db";
+import { triggerChildTasks } from "./child-runner";
+import { TASK_IDS } from "./ids";
+import { agentTurnPayloadSchema } from "./payloads";
+import { agentTurnsQueue } from "./queues";
+import { createTriggerRealtime } from "./realtime";
+import { createTriggerWaitpoints } from "./waitpoints";
+import { createCreditGateway } from "@/server/credits/settle";
+import { createAssetGateway } from "@/server/storage/copy";
+import { createWebhookGateway } from "@/server/public/webhooks";
 
 /**
  * One durable agent turn. Trigger with:

@@ -1,15 +1,15 @@
 import { Prisma, type PrismaClient, type User } from "@prisma/client";
 import { z } from "zod";
-import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types.js";
-import { searchTextFromBlocks, type ContentBlock } from "@/agent/runtime/content-blocks.js";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
-import { parseSendRateLimit, type SendRateLimit } from "@/server/http/rate-limit.js";
-import { parseTurnReserve, reserveIdempotencyKey } from "@/server/credits/reserve.js";
-import { resolveSendAttachments, sendAttachmentIdsSchema } from "@/server/chat/attachments.js";
-import { dispatchAgentTurn } from "@/server/jobs/dispatch.js";
-import { logInfo, logWarn, traceFields } from "@/server/log.js";
-import { createRunRealtimeToken } from "@/server/realtime/token.js";
+import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types";
+import { searchTextFromBlocks, type ContentBlock } from "@/agent/runtime/content-blocks";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
+import { parseSendRateLimit, type SendRateLimit } from "@/server/http/rate-limit";
+import { parseTurnReserve, reserveIdempotencyKey } from "@/server/credits/reserve";
+import { resolveSendAttachments, sendAttachmentIdsSchema } from "@/server/chat/attachments";
+import { dispatchAgentTurn } from "@/server/jobs/dispatch";
+import { logInfo, logWarn, traceFields } from "@/server/log";
+import { createRunRealtimeToken } from "@/server/realtime/token";
 
 export const sendMessageBodySchema = z.object({
   text: z.string().trim().min(1).max(8192),

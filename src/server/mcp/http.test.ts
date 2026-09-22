@@ -1,7 +1,7 @@
 import type { User } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
-import { HttpError } from "@/server/http/errors.js";
-import { handleMcpHttp } from "./http.js";
+import { HttpError } from "@/server/http/errors";
+import { handleMcpHttp } from "./http";
 
 vi.mock("@/server/chat/chats.js", () => ({
   listChats: vi.fn(async () => ({ items: [{ id: "chat_1", title: "Launch" }], nextCursor: null })),

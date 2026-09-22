@@ -1,7 +1,7 @@
-import type { GeneratedAsset } from "@/agent/tools/types.js";
-import { logWarn } from "@/server/log.js";
-import { createS3ObjectStore, s3ConfigFromEnv } from "./s3.js";
-import type { AssetGateway, ObjectStore } from "./types.js";
+import type { GeneratedAsset } from "@/agent/tools/types";
+import { logWarn } from "@/server/log";
+import { createS3ObjectStore, s3ConfigFromEnv } from "./s3";
+import type { AssetGateway, ObjectStore } from "./types";
 
 export type { AssetGateway, ObjectStore };
 

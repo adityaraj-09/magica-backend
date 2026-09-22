@@ -1,19 +1,19 @@
-import { LlmError, isLlmAbortError } from "./errors.js";
-import { iterateSseData } from "./sse.js";
+import { LlmError, isLlmAbortError } from "./errors";
+import { iterateSseData } from "./sse";
 import {
   applyFullToolCalls,
   applyToolCallDeltas,
   finalizeToolCalls,
   type ToolCallDelta,
-} from "./tool-calls.js";
+} from "./tool-calls";
 import type {
   ChatClient,
   ChatCompletionRequest,
   ChatCompletionResult,
   LlmFinishReason,
   LlmUsage,
-} from "./types.js";
-import { OPENROUTER_FREE_ROUTE } from "./types.js";
+} from "./types";
+import { OPENROUTER_FREE_ROUTE } from "./types";
 
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -337,7 +337,10 @@ function streamError(
   extras?: { partialText?: string; modelRouted?: string },
 ): LlmError {
   const message = errorMessage(error) ?? "OpenRouter Free failed mid-stream";
-  return new LlmError("FAILED", message, {
+  const friendly = /provider returned error/i.test(message)
+    ? "The model provider failed. Try again."
+    : message;
+  return new LlmError("FAILED", friendly, {
     retryable: true,
     ...extras,
   });
@@ -362,10 +365,16 @@ async function httpError(response: Response): Promise<LlmError> {
       retryable: response.status === 503,
     });
   }
-  if (response.status >= 500) {
-    return new LlmError("UNAVAILABLE", "Free models are temporarily unavailable.", {
+  if (response.status >= 500 || /provider returned error/i.test(detail ?? "")) {
+    return new LlmError("UNAVAILABLE", "The model provider failed. Try again.", {
       retryable: true,
     });
+  }
+  if (detail && /parameters['’]? schema|exclusiveMinimum|metaschema/i.test(detail)) {
+    return new LlmError(
+      "FAILED",
+      "The model could not start this turn. Try sending the message again.",
+    );
   }
   return new LlmError("FAILED", detail ?? "OpenRouter Free request failed");
 }

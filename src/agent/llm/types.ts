@@ -1,4 +1,4 @@
-import type { LlmError } from "./errors.js";
+import type { LlmError } from "./errors";
 
 export const OPENROUTER_FREE_ROUTE = "openrouter/free";
 

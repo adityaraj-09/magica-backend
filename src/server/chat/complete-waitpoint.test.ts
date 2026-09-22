@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { completeWaitpoint } from "./complete-waitpoint.js";
-import { HttpError } from "@/server/http/errors.js";
+import { completeWaitpoint } from "./complete-waitpoint";
+import { HttpError } from "@/server/http/errors";
 
 const ids = {
   chatId: "11111111-1111-1111-1111-111111111111",

@@ -3,8 +3,8 @@ import {
   runMetadataSchema,
   type RealtimePublisher,
   type RunMetadata,
-} from "@/agent/runtime/realtime.js";
-import { assistantTextStream } from "./streams.js";
+} from "@/agent/runtime/realtime";
+import { assistantTextStream } from "./streams";
 
 export function createTriggerRealtime(): RealtimePublisher {
   let textChain = Promise.resolve();

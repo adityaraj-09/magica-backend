@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logInfo, logWarn, traceFields } from "./log.js";
+import { logInfo, logWarn, traceFields } from "./log";
 
 describe("traceFields", () => {
   it("keeps chatId, runId, messageId, and traceId", () => {

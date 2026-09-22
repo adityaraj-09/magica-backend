@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { sendMessageBodySchema } from "@/server/chat/admit-turn.js";
-import { sendAttachmentIdsSchema } from "@/server/chat/attachments.js";
+import { sendMessageBodySchema } from "@/server/chat/admit-turn";
+import { sendAttachmentIdsSchema } from "@/server/chat/attachments";
 
 export const publicCompletionBodySchema = z
   .object({

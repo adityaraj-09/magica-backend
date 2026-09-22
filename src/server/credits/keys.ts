@@ -1,5 +1,5 @@
-export { reserveIdempotencyKey } from "./reserve.js";
-export { initialGrantIdempotencyKey } from "./grant.js";
+export { reserveIdempotencyKey } from "./reserve";
+export { initialGrantIdempotencyKey } from "./grant";
 
 export function toolSettleIdempotencyKey(toolCallId: string): string {
   return `tool:${toolCallId}:settle`;

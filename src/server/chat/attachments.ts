@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
 import {
   createdAtIdWhere,
   decodeCursor,
   encodeCursor,
   paginationQuerySchema,
-} from "@/server/http/cursor.js";
-import { MAX_FILES_PER_ASSEMBLY } from "@/server/uploads/transloadit.js";
+} from "@/server/http/cursor";
+import { MAX_FILES_PER_ASSEMBLY } from "@/server/uploads/transloadit";
 
 export const sendAttachmentIdsSchema = z
   .array(z.string().uuid())
@@ -147,4 +147,21 @@ export async function listLibraryAttachments(input: {
     })),
     nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
   };
+}
+
+export async function findAttachmentByUrl(input: {
+  userId: string;
+  url: string;
+  db?: PrismaClient;
+}): Promise<{ id: string; filename: string; mimeType: string; url: string }> {
+  const db = input.db ?? prisma;
+  const row = await db.attachment.findFirst({
+    where: { userId: input.userId, url: input.url, status: "COMPLETE" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, filename: true, mimeType: true, url: true },
+  });
+  if (!row?.url) {
+    throw new HttpError("Image was not found", 404, "ATTACHMENT_NOT_FOUND");
+  }
+  return { id: row.id, filename: row.filename, mimeType: row.mimeType, url: row.url };
 }

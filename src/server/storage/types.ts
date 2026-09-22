@@ -1,4 +1,4 @@
-import type { GeneratedAsset } from "@/agent/tools/types.js";
+import type { GeneratedAsset } from "@/agent/tools/types";
 
 export type PutObjectInput = {
   key: string;

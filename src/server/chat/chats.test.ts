@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { HttpError } from "@/server/http/errors.js";
+import { HttpError } from "@/server/http/errors";
 import {
   createChat,
   deleteChat,
@@ -7,8 +7,8 @@ import {
   listChats,
   listMessages,
   updateChat,
-} from "./chats.js";
-import { encodeCursor } from "@/server/http/cursor.js";
+} from "./chats";
+import { encodeCursor } from "@/server/http/cursor";
 
 const ids = {
   userId: "22222222-2222-2222-2222-222222222222",

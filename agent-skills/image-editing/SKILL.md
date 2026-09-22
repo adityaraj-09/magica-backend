@@ -14,7 +14,7 @@ Load this skill when the user wants to generate, edit, or crop images.
 
 ## Workflow
 
-1. If the user attached an image, pass that URL into `gpt_image_2` (edit) or `crop_image`.
+1. If the user attached an image, pass that URL into `gpt_image_2` (edit) or `crop_image`. Do not use `sandbox_run_code`. The image is not on the sandbox filesystem.
 2. If they want a new image, call `gpt_image_2` with only a prompt.
 3. You may chain tools: generate or edit first, then crop the result URL.
 4. Do not invent crop coordinates. Ask or infer a complete rectangle.

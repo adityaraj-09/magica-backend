@@ -1,15 +1,15 @@
-export { LlmError, isLlmAbortError } from "./errors.js";
+export { LlmError, isLlmAbortError } from "./errors";
 export {
   OpenRouterFreeClient,
   assertFreeRoute,
   createOpenRouterClient,
-} from "./openrouter.js";
+} from "./openrouter";
 export {
   toAssistantToolCallMessage,
   toToolResultMessage,
   toWireToolCall,
-} from "./messages.js";
-export { OPENROUTER_FREE_ROUTE } from "./types.js";
+} from "./messages";
+export { OPENROUTER_FREE_ROUTE } from "./types";
 export type {
   ChatClient,
   ChatCompletionRequest,
@@ -26,4 +26,4 @@ export type {
   LlmUsage,
   LlmUserMessage,
   LlmWireToolCall,
-} from "./types.js";
+} from "./types";

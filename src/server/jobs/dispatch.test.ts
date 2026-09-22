@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ToolError } from "@/agent/tools/errors.js";
-import { TASK_IDS } from "@/trigger/ids.js";
-import { agentTurnPayloadSchema } from "@/trigger/payloads.js";
-import { catchNonRetryableToolError } from "@/trigger/errors.js";
+import { ToolError } from "@/agent/tools/errors";
+import { TASK_IDS } from "@/trigger/ids";
+import { agentTurnPayloadSchema } from "@/trigger/payloads";
+import { catchNonRetryableToolError } from "@/trigger/errors";
 
 const trigger = vi.hoisted(() => vi.fn());
 
@@ -10,7 +10,7 @@ vi.mock("@trigger.dev/sdk", () => ({
   tasks: { trigger },
 }));
 
-import { dispatchAgentTurn } from "./dispatch.js";
+import { dispatchAgentTurn } from "./dispatch";
 
 const payload = {
   chatId: "11111111-1111-1111-1111-111111111111",

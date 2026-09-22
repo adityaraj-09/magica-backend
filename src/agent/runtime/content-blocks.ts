@@ -19,6 +19,7 @@ export const contentBlockSchema = z.discriminatedUnion("type", [
     toolName: z.string().min(1),
     output: z.unknown().optional(),
     error: z.string().optional(),
+    durationMs: z.number().int().nonnegative().optional(),
   }),
   z.object({
     type: z.literal("asset"),

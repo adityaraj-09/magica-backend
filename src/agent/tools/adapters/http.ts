@@ -1,4 +1,4 @@
-import { ToolError } from "../errors.js";
+import { ToolError } from "../errors";
 
 const SENSITIVE = /api[_-]?key|authorization|bearer|gx_|e2b_|exa_/i;
 

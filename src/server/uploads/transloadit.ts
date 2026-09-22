@@ -1,9 +1,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db.js";
-import { requireOwnedChat } from "@/server/chat/owned.js";
-import { HttpError } from "@/server/http/errors.js";
+import { prisma } from "@/server/db";
+import { requireOwnedChat } from "@/server/chat/owned";
+import { HttpError } from "@/server/http/errors";
 
 /** Community plan: 0.5 GB per file. */
 export const COMMUNITY_MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -51,7 +51,11 @@ export function transloaditCredentials(
   const key = env.TRANSLOADIT_KEY?.trim();
   const secret = env.TRANSLOADIT_SECRET?.trim();
   if (!key || !secret) {
-    throw new Error("TRANSLOADIT_KEY and TRANSLOADIT_SECRET are required");
+    throw new HttpError(
+      "Uploads are unavailable until TRANSLOADIT_KEY and TRANSLOADIT_SECRET are set",
+      503,
+      "UPLOADS_UNAVAILABLE",
+    );
   }
   const notifyUrl = env.TRANSLOADIT_NOTIFY_URL?.trim();
   return { key, secret, ...(notifyUrl ? { notifyUrl } : {}) };
@@ -150,18 +154,18 @@ const assemblyFileSchema = z.object({
   ext: z.string().optional(),
   mime: z.string().optional(),
   type: z.string().optional(),
-  size: z.number().nonnegative().optional(),
-  ssl_url: z.string().url().optional(),
-  url: z.string().url().optional(),
-  original_id: z.string().optional(),
+  size: z.number().nonnegative().nullish(),
+  ssl_url: z.string().url().nullish(),
+  url: z.string().url().nullish(),
+  original_id: z.string().nullish(),
   meta: z
     .object({
-      width: z.number().optional(),
-      height: z.number().optional(),
-      duration: z.number().optional(),
+      width: z.number().nullish(),
+      height: z.number().nullish(),
+      duration: z.number().nullish(),
     })
     .passthrough()
-    .optional(),
+    .nullish(),
 });
 
 export async function persistAssembly(input: {
@@ -244,8 +248,9 @@ function filesFromAssembly(assembly: unknown): z.infer<typeof assemblyFileSchema
   if (Array.isArray(record.uploads)) collected.push(...record.uploads);
   const results = record.results;
   if (results && typeof results === "object") {
-    const original = (results as Record<string, unknown>)[":original"];
-    if (Array.isArray(original)) collected.push(...original);
+    for (const value of Object.values(results as Record<string, unknown>)) {
+      if (Array.isArray(value)) collected.push(...value);
+    }
   }
   const parsed = collected
     .map((file) => assemblyFileSchema.safeParse(file))
@@ -307,8 +312,8 @@ async function upsertUpload(
     mimeType,
     byteSize,
     url,
-    width: input.file.meta?.width,
-    height: input.file.meta?.height,
+    width: input.file.meta?.width ?? undefined,
+    height: input.file.meta?.height ?? undefined,
     durationMs,
     transloaditAssemblyId: input.assemblyId,
     transloaditFileId: input.file.id,

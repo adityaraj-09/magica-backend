@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { ToolError } from "@/agent/tools/errors.js";
-import { TOOL_NAMES } from "@/agent/tools/types.js";
-import { createAgentRuntime } from "@/agent/runtime/create-runtime.js";
-import { HttpError } from "@/server/http/errors.js";
-import { createAssetGateway } from "@/server/storage/copy.js";
-import { emitWebhooks } from "./webhooks.js";
+import { ToolError } from "@/agent/tools/errors";
+import { TOOL_NAMES } from "@/agent/tools/types";
+import { createAgentRuntime } from "@/agent/runtime/create-runtime";
+import { HttpError } from "@/server/http/errors";
+import { createAssetGateway } from "@/server/storage/copy";
+import { emitWebhooks } from "./webhooks";
 
 export const magicaPublicToolSchema = z.enum([
   TOOL_NAMES.cropImage,

@@ -1,9 +1,9 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
-import { logWarn } from "@/server/log.js";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
+import { logWarn } from "@/server/log";
 
 export const WEBHOOK_EVENTS = [
   "agent.started",

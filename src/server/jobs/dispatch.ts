@@ -1,10 +1,10 @@
 import { tasks } from "@trigger.dev/sdk";
-import type { orchestrateAgentTurn } from "@/trigger/orchestrator.js";
-import { TASK_IDS } from "@/trigger/ids.js";
+import type { orchestrateAgentTurn } from "@/trigger/orchestrator";
+import { TASK_IDS } from "@/trigger/ids";
 import {
   agentTurnPayloadSchema,
   type AgentTurnPayload,
-} from "@/trigger/payloads.js";
+} from "@/trigger/payloads";
 
 export type { AgentTurnPayload };
 export { TASK_IDS };

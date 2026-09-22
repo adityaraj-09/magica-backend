@@ -1,22 +1,22 @@
-export { ToolError, toolErrorFromUnknown } from "./errors.js";
-export { ToolRegistry } from "./registry.js";
-export { createToolRegistry } from "./catalog.js";
-export { createWebSearchAdapter, ExaWebSearchAdapter, StubWebSearchAdapter } from "./adapters/exa.js";
-export { createMagicaAdapter, MagicaApiAdapter } from "./adapters/magica.js";
-export { createE2BAdapter, E2BSandboxAdapter } from "./adapters/e2b.js";
+export { ToolError, toolErrorFromUnknown } from "./errors";
+export { ToolRegistry } from "./registry";
+export { createToolRegistry } from "./catalog";
+export { createWebSearchAdapter, ExaWebSearchAdapter, StubWebSearchAdapter } from "./adapters/exa";
+export { createMagicaAdapter, MagicaApiAdapter } from "./adapters/magica";
+export { createE2BAdapter, E2BSandboxAdapter } from "./adapters/e2b";
 export {
   createSkillLoaderAdapter,
   FilesystemSkillLoaderAdapter,
   resetSkillLoaderAdapter,
-} from "./adapters/skills.js";
-export { SkillRegistry } from "../skills/registry.js";
+} from "./adapters/skills";
+export { SkillRegistry } from "../skills/registry";
 export type {
   E2BAdapter,
   MagicaAdapter,
   SkillLoaderAdapter,
   ToolAdapters,
   WebSearchAdapter,
-} from "./adapters/types.js";
+} from "./adapters/types";
 export {
   TOOL_NAMES,
   toolNameSchema,
@@ -28,7 +28,7 @@ export {
   type ToolExecutionResult,
   type ToolName,
   type ToolProvider,
-} from "./types.js";
+} from "./types";
 export {
   cropImageInputSchema,
   cropImageOutputSchema,
@@ -44,4 +44,4 @@ export {
   sandboxRunCodeOutputSchema,
   webSearchInputSchema,
   webSearchOutputSchema,
-} from "./schemas.js";
+} from "./schemas";

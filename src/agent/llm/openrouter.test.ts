@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LlmError } from "./errors.js";
-import { toAssistantToolCallMessage, toToolResultMessage } from "./messages.js";
-import { OpenRouterFreeClient, createOpenRouterClient } from "./openrouter.js";
-import { OPENROUTER_FREE_ROUTE } from "./types.js";
-import type { LlmTool } from "./types.js";
+import { LlmError } from "./errors";
+import { toAssistantToolCallMessage, toToolResultMessage } from "./messages";
+import { OpenRouterFreeClient, createOpenRouterClient } from "./openrouter";
+import { OPENROUTER_FREE_ROUTE } from "./types";
+import type { LlmTool } from "./types";
 
 const FREE_MODEL = "deepseek/deepseek-r1:free";
 
@@ -223,6 +223,24 @@ describe("OpenRouterFreeClient", () => {
       retryable: true,
       retryAfterMs: 7000,
     });
+  });
+
+  it("does not surface raw tool-parameter schema dumps", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse(
+        {
+          error: {
+            message:
+              "Tool 0 function has invalid 'parameters' schema: True is not of type 'number' Failed validating exclusiveMinimum",
+          },
+        },
+        400,
+      );
+
+    const error = await complete(fetchImpl).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: "FAILED" });
+    expect(String(error)).not.toMatch(/exclusiveMinimum/);
+    expect(String(error)).toMatch(/could not start this turn/i);
   });
 
   it("treats an empty stream as a terminal empty-stream failure", async () => {

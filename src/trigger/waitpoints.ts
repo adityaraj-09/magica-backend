@@ -1,6 +1,6 @@
 import { logger, wait } from "@trigger.dev/sdk";
-import type { AgentStore } from "@/agent/runtime/store.js";
-import type { WaitpointApproval, WaitpointGateway } from "@/agent/runtime/waitpoint.js";
+import type { AgentStore } from "@/agent/runtime/store";
+import type { WaitpointApproval, WaitpointGateway } from "@/agent/runtime/waitpoint";
 
 export type WaitpointTokenOutput = {
   status: "approved" | "rejected";

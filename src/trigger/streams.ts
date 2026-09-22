@@ -1,5 +1,5 @@
 import { streams, type InferStreamType } from "@trigger.dev/sdk";
-import { STREAM_IDS, type AssistantTextChunk } from "@/agent/runtime/realtime.js";
+import { STREAM_IDS, type AssistantTextChunk } from "@/agent/runtime/realtime";
 
 /** Token-by-token assistant text. Run metadata (status, tools, overlay) is separate. */
 export const assistantTextStream = streams.define<AssistantTextChunk>({

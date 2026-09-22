@@ -1,4 +1,4 @@
-import { ToolError } from "@/agent/tools/errors.js";
+import { ToolError } from "@/agent/tools/errors";
 
 /** Non-retryable tool failures must not burn Magica/E2B attempts. */
 export function catchNonRetryableToolError({ error }: { error: unknown }):

@@ -1,11 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db.js";
+import { prisma } from "@/server/db";
 import {
   createdAtIdWhere,
   decodeCursor,
   encodeCursor,
   paginationQuerySchema,
-} from "@/server/http/cursor.js";
+} from "@/server/http/cursor";
 
 export type LedgerEntryJson = {
   id: string;

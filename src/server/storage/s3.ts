@@ -1,5 +1,5 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import type { ObjectStore, PutObjectInput, PutObjectResult } from "./types.js";
+import type { ObjectStore, PutObjectInput, PutObjectResult } from "./types";
 
 export type S3StoreConfig = {
   bucket: string;

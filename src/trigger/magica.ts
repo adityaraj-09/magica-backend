@@ -1,18 +1,18 @@
 import { logger, schemaTask } from "@trigger.dev/sdk";
-import { createMagicaAdapter } from "@/agent/tools/adapters/magica.js";
+import { createMagicaAdapter } from "@/agent/tools/adapters/magica";
 import {
   cropImageInputSchema,
   gptImage2InputSchema,
   mergeVideosInputSchema,
-} from "@/agent/tools/schemas.js";
-import { TOOL_NAMES } from "@/agent/tools/types.js";
-import type { MagicaAdapter } from "@/agent/tools/adapters/types.js";
-import { childTrace, withSignal } from "./context.js";
-import { catchNonRetryableToolError } from "./errors.js";
-import { TASK_IDS } from "./ids.js";
-import { parseToolInput } from "./parse.js";
-import { magicaToolPayloadSchema } from "./payloads.js";
-import { magicaQueue } from "./queues.js";
+} from "@/agent/tools/schemas";
+import { TOOL_NAMES } from "@/agent/tools/types";
+import type { MagicaAdapter } from "@/agent/tools/adapters/types";
+import { childTrace, withSignal } from "./context";
+import { catchNonRetryableToolError } from "./errors";
+import { TASK_IDS } from "./ids";
+import { parseToolInput } from "./parse";
+import { magicaToolPayloadSchema } from "./payloads";
+import { magicaQueue } from "./queues";
 
 let magica: MagicaAdapter | undefined;
 

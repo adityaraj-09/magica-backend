@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publicCompletionBodySchema } from "./completions.js";
+import { publicCompletionBodySchema } from "./completions";
 
 describe("publicCompletionBodySchema", () => {
   it("accepts text, prompt, or the last user message", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messagesToLlm, LLM_TOOL_RESULT_MAX_CHARS } from "./history.js";
+import { messagesToLlm, LLM_TOOL_RESULT_MAX_CHARS } from "./history";
 
 describe("messagesToLlm", () => {
   it("turns assistant tool blocks into assistant + tool messages", () => {
@@ -93,5 +93,36 @@ describe("messagesToLlm", () => {
     if (skill?.role === "tool") {
       expect(skill.content).toContain(huge);
     }
+  });
+
+  it("puts attached file URLs in the user text the model can pass to tools", () => {
+    const messages = messagesToLlm([
+      {
+        role: "USER",
+        status: "SUCCESS",
+        searchText: "crop the right side",
+        contentBlocks: [
+          { type: "text", text: "crop the right side" },
+          {
+            type: "asset",
+            url: "https://cdn.example/shot.png",
+            mimeType: "image/png",
+            filename: "shot.png",
+          },
+        ],
+        attachments: [
+          { url: "https://cdn.example/shot.png", mimeType: "image/png", filename: "shot.png" },
+        ],
+      },
+    ]);
+    const user = messages[0];
+    expect(user?.role).toBe("user");
+    if (user?.role !== "user" || typeof user.content === "string") {
+      throw new Error("expected multimodal user content");
+    }
+    const text = user.content.find((part) => part.type === "text");
+    expect(text && "text" in text ? text.text : "").toContain("https://cdn.example/shot.png");
+    expect(text && "text" in text ? text.text : "").toContain("shot.png");
+    expect(user.content.filter((part) => part.type === "image_url")).toHaveLength(1);
   });
 });

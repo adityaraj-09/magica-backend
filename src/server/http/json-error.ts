@@ -5,7 +5,13 @@ import { HttpError } from "@/server/http/errors";
 
 export function jsonError(error: unknown): NextResponse {
   if (error instanceof AuthError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json(
+      {
+        error: error.message,
+        ...(error.status === 401 ? { code: "UNAUTHORIZED" } : {}),
+      },
+      { status: error.status },
+    );
   }
   if (error instanceof HttpError) {
     const retryAfter = error.details?.retryAfter;

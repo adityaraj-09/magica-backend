@@ -2,10 +2,10 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FilesystemSkillLoaderAdapter } from "../tools/adapters/skills.js";
-import { ToolError } from "../tools/errors.js";
-import type { ToolExecutionContext } from "../tools/types.js";
-import { SkillRegistry } from "./registry.js";
+import { FilesystemSkillLoaderAdapter } from "../tools/adapters/skills";
+import { ToolError } from "../tools/errors";
+import type { ToolExecutionContext } from "../tools/types";
+import { SkillRegistry } from "./registry";
 
 const shippedSkills = path.resolve(process.cwd(), "agent-skills");
 

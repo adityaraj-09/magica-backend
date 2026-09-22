@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ToolError, toolErrorFromUnknown } from "./errors.js";
+import { ToolError, toolErrorFromUnknown } from "./errors";
 
 describe("toolErrorFromUnknown", () => {
   it("preserves code and retryable from the wire name", () => {

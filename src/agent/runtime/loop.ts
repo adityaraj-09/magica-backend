@@ -1,13 +1,13 @@
 import { Prisma } from "@prisma/client";
-import { LlmError } from "@/agent/llm/errors.js";
-import type { ChatClient, LlmMessage, LlmToolCallProposal } from "@/agent/llm/types.js";
-import { ToolError } from "@/agent/tools/errors.js";
-import type { ToolRegistry } from "@/agent/tools/registry.js";
-import type { SkillMetadata } from "@/agent/skills/registry.js";
-import { TOOL_NAMES } from "@/agent/tools/types.js";
-import { appendBlocks, type ContentBlock } from "./content-blocks.js";
-import { executeRegisteredTool, type ChildTaskRunner } from "./execute-tool.js";
-import { messagesToLlm } from "./history.js";
+import { LlmError } from "@/agent/llm/errors";
+import type { ChatClient, LlmMessage, LlmToolCallProposal } from "@/agent/llm/types";
+import { ToolError } from "@/agent/tools/errors";
+import type { ToolRegistry } from "@/agent/tools/registry";
+import type { SkillMetadata } from "@/agent/skills/registry";
+import { TOOL_NAMES } from "@/agent/tools/types";
+import { appendBlocks, type ContentBlock } from "./content-blocks";
+import { executeRegisteredTool, type ChildTaskRunner } from "./execute-tool";
+import { messagesToLlm } from "./history";
 import {
   noopRealtime,
   progressFor,
@@ -15,13 +15,14 @@ import {
   type RealtimePublisher,
   type RunMetadata,
   type ToolLive,
-} from "./realtime.js";
-import { AgentStore, type RunSnapshot } from "./store.js";
-import { buildSystemPrompt } from "./system-prompt.js";
-import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint.js";
-import { noopCredits, type CreditGateway } from "@/server/credits/settle.js";
-import { noopAssets, type AssetGateway } from "@/server/storage/copy.js";
-import { noopWebhooks, type WebhookGateway } from "@/server/public/webhooks.js";
+} from "./realtime";
+import { AgentStore, stableJson, type RunSnapshot } from "./store";
+import { buildSystemPrompt } from "./system-prompt";
+import { shouldSuggestTitle, suggestTaskTitle, userTextFromHistory } from "./task-title";
+import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint";
+import { noopCredits, type CreditGateway } from "@/server/credits/settle";
+import { noopAssets, type AssetGateway } from "@/server/storage/copy";
+import { noopWebhooks, type WebhookGateway } from "@/server/public/webhooks";
 
 export type AgentTurnInput = {
   chatId: string;
@@ -72,11 +73,11 @@ export async function runAgentLoop(
 
   const assistant = await deps.store.ensureAssistantMessage(run);
   let blocks = assistant.blocks;
+  const history = await deps.store.listHistory(run.chatId);
   const priorMessages = messagesToLlm(
-    (await deps.store.listHistory(run.chatId)).filter(
-      (message) => message.role !== "ASSISTANT" || message.status !== "STREAMING",
-    ),
+    history.filter((message) => message.role !== "ASSISTANT" || message.status !== "STREAMING"),
   );
+  await nameChatFromUserText(deps, run.chatId, userTextFromHistory(history));
   let promptTokens = 0;
   let completionTokens = 0;
   let modelRouted: string | undefined;
@@ -137,11 +138,17 @@ export async function runAgentLoop(
         ...syntheticMalformed(completion.malformedToolCalls),
       ];
 
-      await persistAssistant(deps, assistant.id, blocks, {
-        promptTokens,
-        completionTokens,
-        status: proposals.length > 0 ? "STREAMING" : "SUCCESS",
-      });
+      await persistAssistant(
+        deps,
+        assistant.id,
+        blocks,
+        {
+          promptTokens,
+          completionTokens,
+          status: proposals.length > 0 ? "STREAMING" : "SUCCESS",
+        },
+        { live, realtime, thinkingStartedAt },
+      );
 
       if (proposals.length === 0) {
         return terminate(deps, run, assistant.id, blocks, live, realtime, {
@@ -237,6 +244,8 @@ export async function runAgentLoop(
         credits,
         assets: deps.assets ?? noopAssets,
         thinkingStartedAt,
+        promptTokens,
+        completionTokens,
         traceId: input.traceId,
         deps,
       });
@@ -244,35 +253,17 @@ export async function runAgentLoop(
       if (executed.aborted) {
         throw executed.aborted;
       }
-      await persistAssistant(deps, assistant.id, blocks, {
-        promptTokens,
-        completionTokens,
-        status: "STREAMING",
-      });
-
-      const mediaHold = await maybeMediaWait({
+      await persistAssistant(
         deps,
-        run,
-        live,
-        realtime,
-        thinkingStartedAt,
-        turn,
-        blocks: executed.blocks,
-      });
-      if (mediaHold && mediaHold !== "approved") {
-        return terminate(deps, run, assistant.id, blocks, live, realtime, {
-          status: mediaHold === "expired" ? "FAILED" : "CANCELLED",
+        assistant.id,
+        blocks,
+        {
           promptTokens,
           completionTokens,
-          modelRouted,
-          thinkingStartedAt,
-          errorCode: mediaHold === "expired" ? "WAITPOINT_EXPIRED" : "MEDIA_REJECTED",
-          errorMessage:
-            mediaHold === "expired"
-              ? "Media approval timed out."
-              : "Generated media was not approved.",
-        });
-      }
+          status: "STREAMING",
+        },
+        { live, realtime, thinkingStartedAt },
+      );
     }
 
     return terminate(deps, run, assistant.id, blocks, live, realtime, {
@@ -295,6 +286,23 @@ export async function runAgentLoop(
       errorCode: aborted ? "CANCELLED" : codeOf(error),
       errorMessage: aborted ? "The run was cancelled." : userSafeError(error),
     });
+  }
+}
+
+async function nameChatFromUserText(
+  deps: AgentLoopDeps,
+  chatId: string,
+  userText: string,
+): Promise<void> {
+  if (!userText) return;
+  try {
+    const current = await deps.store.getChatTitle(chatId);
+    if (current == null || !shouldSuggestTitle(current, userText)) return;
+    const title = await suggestTaskTitle(deps.llm, userText, deps.signal);
+    if (!title) return;
+    await deps.store.renameChat(chatId, title);
+  } catch {
+    // A missing name must not fail the turn.
   }
 }
 
@@ -354,6 +362,8 @@ async function executeProposals(input: {
   credits: CreditGateway;
   assets: AssetGateway;
   thinkingStartedAt: Date;
+  promptTokens: number;
+  completionTokens: number;
   traceId: string;
   deps: AgentLoopDeps;
 }): Promise<{ blocks: ContentBlock[]; aborted?: unknown }> {
@@ -367,6 +377,31 @@ async function executeProposals(input: {
     typeof AbortSignal.any === "function"
       ? AbortSignal.any([input.deps.signal, batchAbort.signal])
       : input.deps.signal;
+  const sharedRuns = new Map<string, Promise<ContentBlock[] | null>>();
+  let flushed = [...input.liveBlocks];
+  let persistTail = Promise.resolve();
+  const flush = (next: ContentBlock[]) => {
+    if (!next.length) return persistTail;
+    persistTail = persistTail.then(async () => {
+      flushed = appendBlocks(flushed, next);
+      await persistAssistant(
+        input.deps,
+        input.assistantMessageId,
+        flushed,
+        {
+          promptTokens: input.promptTokens,
+          completionTokens: input.completionTokens,
+          status: "STREAMING",
+        },
+        {
+          live: input.live,
+          realtime: input.realtime,
+          thinkingStartedAt: input.thinkingStartedAt,
+        },
+      );
+    });
+    return persistTail;
+  };
 
   const started = await Promise.all(
     jobs.map(async ({ proposal, sequence: toolSequence }, index) => {
@@ -385,10 +420,59 @@ async function executeProposals(input: {
         const already = input.liveBlocks.some(
           (block) => block.type === "tool_result" && block.toolCallId === proposal.id,
         );
-        return {
-          index,
-          block: already ? [] : resultBlock(proposal, existing.output, existing.errorMessage),
-        };
+        const block = already ? [] : resultBlock(proposal, existing.output, existing.errorMessage);
+        await flush(block);
+        return { index, block };
+      }
+
+      const reuseKey = `${proposal.name}:${stableJson(proposal.arguments)}`;
+      const reused = await input.deps.store.findSuccessfulToolByInput(
+        input.run.id,
+        proposal.name,
+        proposal.arguments,
+      );
+      if (reused) {
+        await input.credits.settleTool({
+          run: input.run,
+          toolCallId: proposal.id,
+          toolInvocationId: reused.id,
+          toolName: proposal.name,
+          cost: reused.creditCost,
+        });
+        publishTool(input, {
+          toolCallId: proposal.id,
+          toolName: proposal.name,
+          status: "SUCCESS",
+        });
+        const block = resultBlock(proposal, reused.output, reused.errorMessage);
+        await flush(block);
+        return { index, block };
+      }
+
+      let resolveShared: ((blocks: ContentBlock[] | null) => void) | undefined;
+      if (!sharedRuns.has(reuseKey)) {
+        sharedRuns.set(
+          reuseKey,
+          new Promise<ContentBlock[] | null>((resolve) => {
+            resolveShared = resolve;
+          }),
+        );
+      } else {
+        const shared = await sharedRuns.get(reuseKey);
+        if (shared) {
+          publishTool(input, {
+            toolCallId: proposal.id,
+            toolName: proposal.name,
+            status: "SUCCESS",
+          });
+          const block = resultBlock(
+            proposal,
+            shared.find((item) => item.type === "tool_result")?.output,
+            null,
+          );
+          await flush(block);
+          return { index, block };
+        }
       }
 
       let provider: "MAGICA" | "E2B" | "EXA" | "SKILL" | "INTERNAL" = "INTERNAL";
@@ -418,10 +502,13 @@ async function executeProposals(input: {
             status: "FAILED",
             errorMessage: error.message,
           });
+          const block = resultBlock(proposal, undefined, error.message);
+          resolveShared?.(null);
+          await flush(block);
           return {
             index,
             aborted: error,
-            block: resultBlock(proposal, undefined, error.message),
+            block,
           };
         }
         await input.deps.store.upsertToolInvocation({
@@ -529,6 +616,7 @@ async function executeProposals(input: {
             toolCallId: proposal.id,
             toolName: proposal.name,
             output: result.output,
+            durationMs: result.durationMs,
           },
           ...assets.map(
             (asset): ContentBlock => ({
@@ -541,6 +629,8 @@ async function executeProposals(input: {
         ];
         if (settled.exhausted) {
           batchAbort.abort();
+          resolveShared?.(blocks);
+          await flush(blocks);
           return {
             index,
             aborted: new ToolError(
@@ -551,6 +641,8 @@ async function executeProposals(input: {
             block: blocks,
           };
         }
+        resolveShared?.(blocks);
+        await flush(blocks);
         return { index, block: blocks };
       } catch (error) {
         const cancelled = input.deps.signal.aborted || batchAbort.signal.aborted || isCancelled(error);
@@ -570,12 +662,15 @@ async function executeProposals(input: {
             status: "CANCELLED",
             errorMessage: userSafeError(error),
           });
+          const block = resultBlock(proposal, undefined, userSafeError(error));
+          resolveShared?.(null);
+          await flush(block);
           return {
             index,
             aborted: error instanceof ToolError || error instanceof LlmError
               ? error
               : new ToolError("CANCELLED", "The run was cancelled."),
-            block: resultBlock(proposal, undefined, userSafeError(error)),
+            block,
           };
         }
         await persistInvocationFailure({
@@ -592,14 +687,18 @@ async function executeProposals(input: {
           status: "FAILED",
           errorMessage: userSafeError(error),
         });
+        const block = resultBlock(proposal, undefined, userSafeError(error));
+        resolveShared?.(null);
+        await flush(block);
         return {
           index,
-          block: resultBlock(proposal, undefined, userSafeError(error)),
+          block,
         };
       }
     }),
   );
 
+  await persistTail;
   started.sort((a, b) => a.index - b.index);
   const aborted = started.find((item) => item.aborted)?.aborted;
   return { blocks: started.flatMap((item) => item.block), aborted };
@@ -709,12 +808,24 @@ async function persistAssistant(
     errorCode?: string;
     errorMessage?: string;
   },
+  progress?: {
+    live: RunMetadata;
+    realtime: RealtimePublisher;
+    thinkingStartedAt: Date;
+  },
 ): Promise<void> {
   await deps.store.saveAssistant({
     messageId,
     blocks,
     ...extras,
   });
+  if (!progress) return;
+  progress.live.assistant = {
+    id: messageId,
+    status: extras.status,
+    contentBlocks: blocks,
+  };
+  publishLive(progress.realtime, progress.live, progress.thinkingStartedAt, {});
 }
 
 async function terminate(
@@ -740,13 +851,19 @@ async function terminate(
       : extras.status === "CANCELLED"
         ? "CANCELLED"
         : "FAILED";
-  await persistAssistant(deps, assistantMessageId, blocks, {
-    promptTokens: extras.promptTokens,
-    completionTokens: extras.completionTokens,
-    status: messageStatus,
-    errorCode: extras.errorCode,
-    errorMessage: extras.errorMessage,
-  });
+  await persistAssistant(
+    deps,
+    assistantMessageId,
+    blocks,
+    {
+      promptTokens: extras.promptTokens,
+      completionTokens: extras.completionTokens,
+      status: messageStatus,
+      errorCode: extras.errorCode,
+      errorMessage: extras.errorMessage,
+    },
+    { live, realtime, thinkingStartedAt: extras.thinkingStartedAt },
+  );
   const credits = deps.credits ?? noopCredits;
   let settledCredits: string | undefined;
   try {
@@ -874,6 +991,11 @@ function createLiveMetadata(run: RunSnapshot, assistantMessageId: string): RunMe
     progressPercent: progressFor("THINKING"),
     tools: [],
     waitpoint: null,
+    assistant: {
+      id: assistantMessageId,
+      status: "STREAMING",
+      contentBlocks: [],
+    },
     errorCode: null,
     errorMessage: null,
   };
@@ -970,34 +1092,6 @@ async function maybeCreditWait(input: {
       estimatedCredits: estimates.total.toString(),
       remainingCredits: remaining.toString(),
       tools: estimates.tools,
-    },
-  });
-}
-
-async function maybeMediaWait(input: {
-  deps: AgentLoopDeps;
-  run: RunSnapshot;
-  live: RunMetadata;
-  realtime: RealtimePublisher;
-  thinkingStartedAt: Date;
-  turn: number;
-  blocks: ContentBlock[];
-}): Promise<WaitpointApproval | null> {
-  const assets = input.blocks.filter(
-    (block): block is Extract<ContentBlock, { type: "asset" }> => block.type === "asset",
-  );
-  if (assets.length === 0) return null;
-  return requestApproval({
-    ...input,
-    type: "MEDIA",
-    currentStep: "wait:media",
-    idempotencyKey: `run:${input.run.id}:wait:media:${input.turn}`,
-    payload: {
-      assets: assets.map((asset) => ({
-        url: asset.url,
-        mimeType: asset.mimeType,
-        filename: asset.filename,
-      })),
     },
   });
 }

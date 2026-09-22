@@ -1,17 +1,17 @@
 import type { PrismaClient, User } from "@prisma/client";
 import { ZodError } from "zod";
-import { admitTurn } from "@/server/chat/admit-turn.js";
+import { admitTurn } from "@/server/chat/admit-turn";
 import {
   createChat,
   deleteChat,
   getChat,
   listChats,
   listMessages,
-} from "@/server/chat/chats.js";
-import { HttpError } from "@/server/http/errors.js";
-import { publicCompletionBodySchema } from "@/server/public/completions.js";
-import { executePublicMagicaTool } from "@/server/public/magica.js";
-import { loadRunSnapshot } from "@/server/realtime/snapshot.js";
+} from "@/server/chat/chats";
+import { HttpError } from "@/server/http/errors";
+import { publicCompletionBodySchema } from "@/server/public/completions";
+import { executePublicMagicaTool } from "@/server/public/magica";
+import { loadRunSnapshot } from "@/server/realtime/snapshot";
 
 export type McpToolResult = {
   content: Array<{ type: "text"; text: string }>;

@@ -1,5 +1,5 @@
 import { auth } from "@trigger.dev/sdk";
-import { TASK_IDS } from "@/trigger/ids.js";
+import { TASK_IDS } from "@/trigger/ids";
 
 export async function createRunRealtimeToken(input: {
   chatId: string;

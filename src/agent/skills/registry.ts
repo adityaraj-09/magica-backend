@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { ToolError } from "../tools/errors.js";
-import { parseSkillMarkdown } from "./parse.js";
+import { ToolError } from "../tools/errors";
+import { parseSkillMarkdown } from "./parse";
 
 export const MAX_SKILL_BYTES = 64 * 1024;
 export const MAX_ASSET_BYTES = 512 * 1024;

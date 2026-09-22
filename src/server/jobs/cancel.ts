@@ -1,14 +1,25 @@
 import { z } from "zod";
 import { runs } from "@trigger.dev/sdk";
 import type { PrismaClient } from "@prisma/client";
-import { requireOwnedChat } from "@/server/chat/owned.js";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
-import { logInfo, logWarn, traceFields } from "@/server/log.js";
+import { requireOwnedChat } from "@/server/chat/owned";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
+import { logInfo, logWarn, traceFields } from "@/server/log";
 
 const uuid = z.string().uuid();
 
 const TERMINAL = new Set(["COMPLETE", "FAILED", "CANCELLED"]);
+const TERMINAL_REMOTE = new Set([
+  "CANCELED",
+  "CANCELLED",
+  "COMPLETED",
+  "FAILED",
+  "CRASHED",
+  "SYSTEM_FAILURE",
+  "EXPIRED",
+  "TIMED_OUT",
+  "INTERRUPTED",
+]);
 const ACTIVE = new Set(["QUEUED", "THINKING", "WORKING", "WAITING", "STOPPING"]);
 
 export type CancelRunResult = {
@@ -24,6 +35,7 @@ export async function cancelRun(input: {
   runId: string;
   db?: PrismaClient;
   cancelTrigger?: (triggerRunId: string) => Promise<void>;
+  readTriggerStatus?: (triggerRunId: string) => Promise<string | null>;
 }): Promise<CancelRunResult> {
   const db = input.db ?? prisma;
   const runId = uuid.parse(input.runId);
@@ -85,6 +97,25 @@ export async function cancelRun(input: {
     const cancelTrigger = input.cancelTrigger ?? defaultCancelTrigger;
     try {
       await cancelTrigger(run.triggerRunId);
+      const remote = await (input.readTriggerStatus ?? defaultTriggerStatus)(run.triggerRunId);
+      if (remote && TERMINAL_REMOTE.has(remote)) {
+        await db.agentRun.update({
+          where: { id: run.id },
+          data: {
+            status: "CANCELLED",
+            currentStep: "cancelled",
+            completedAt: new Date(),
+            errorCode: "CANCELLED",
+            errorMessage: "The run was cancelled.",
+          },
+        });
+        return {
+          chatId: run.chatId,
+          runId: run.id,
+          status: "CANCELLED",
+          replayed: false,
+        };
+      }
     } catch (error) {
       logWarn("run.cancel_trigger_failed", {
         ...traceFields({
@@ -117,4 +148,9 @@ export async function cancelRun(input: {
 
 async function defaultCancelTrigger(triggerRunId: string): Promise<void> {
   await runs.cancel(triggerRunId);
+}
+
+async function defaultTriggerStatus(triggerRunId: string): Promise<string | null> {
+  const remote = await runs.retrieve(triggerRunId);
+  return typeof remote.status === "string" ? remote.status : null;
 }

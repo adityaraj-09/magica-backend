@@ -1,17 +1,17 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
-import { ToolError } from "../errors.js";
-import { resolveInside } from "../../skills/paths.js";
-import { MAX_ASSET_BYTES, SkillRegistry, sha256 } from "../../skills/registry.js";
+import { ToolError } from "../errors";
+import { resolveInside } from "../../skills/paths";
+import { MAX_ASSET_BYTES, SkillRegistry, sha256 } from "../../skills/registry";
 import {
   loadSkillInputSchema,
   loadSkillOutputSchema,
   readSkillAssetInputSchema,
   readSkillAssetOutputSchema,
-} from "../schemas.js";
-import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
-import type { SkillLoaderAdapter } from "./types.js";
-import { throwIfAborted } from "./http.js";
+} from "../schemas";
+import type { ToolExecutionContext, ToolExecutionResult } from "../types";
+import type { SkillLoaderAdapter } from "./types";
+import { throwIfAborted } from "./http";
 
 const TEXT_EXTENSIONS = new Set([".md", ".txt", ".json", ".csv", ".yml", ".yaml"]);
 const BINARY_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);

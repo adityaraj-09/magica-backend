@@ -1,4 +1,4 @@
-import type { WaitpointOverlay } from "./realtime.js";
+import type { WaitpointOverlay } from "./realtime";
 
 export type WaitpointApproval = "approved" | "rejected" | "expired";
 

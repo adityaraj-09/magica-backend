@@ -1,4 +1,4 @@
-import type { ToolExecutionContext, ToolExecutionResult } from "../types.js";
+import type { ToolExecutionContext, ToolExecutionResult } from "../types";
 import type {
   CropImageInput,
   CropImageOutput,
@@ -14,7 +14,7 @@ import type {
   SandboxRunCodeOutput,
   WebSearchInput,
   WebSearchOutput,
-} from "../schemas.js";
+} from "../schemas";
 
 export type MagicaAdapter = {
   cropImage: (

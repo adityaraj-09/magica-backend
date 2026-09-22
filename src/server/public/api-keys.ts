@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { PrismaClient, User } from "@prisma/client";
-import { prisma } from "@/server/db.js";
-import { HttpError } from "@/server/http/errors.js";
+import { prisma } from "@/server/db";
+import { HttpError } from "@/server/http/errors";
 
 export const API_KEY_PREFIX = "gxk_live_";
 
