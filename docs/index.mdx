@@ -1,28 +1,84 @@
 ---
-title: Galaxy Agent API
-description: Versioned REST for chats, Magica tools, run status, and signed webhooks.
+title: Overview
+description: REST API for agent chats, Magica tools, run polling, and signed webhooks.
 ---
 
-The public API lives under `/api/v1`. Session-cookie Clerk routes (`/api/chats`, `/api/me`, …) stay for the product UI. External integrations should use API keys.
+The public API lets you create chats, submit a turn, poll a long-running run, and call Crop Image, GPT Image 2, and Merge Videos directly. Use it from backends and scripts. The product UI keeps using the signed-in session.
 
-## Base URL
+<Note>
+  Every `/api/v1` request needs `Authorization: Bearer gxk_live_…`. Session cookies are not accepted on these routes.
+</Note>
 
-```
-https://<your-backend>/api/v1
-```
+## Start here
+
+<Steps>
+  <Step title="Create an API key">
+    Sign in to the product and create a key on **API / MCP**. The full `gxk_live_…` value is shown once. Send it as `Authorization: Bearer $GALAXY_API_KEY` on every public request.
+  </Step>
+  <Step title="Submit a turn">
+    `POST /api/v1/completions` with `{ "text": "…" }` creates a chat if you omit `chatId`, then queues the agent. The HTTP call returns immediately with `runId`.
+  </Step>
+  <Step title="Poll until the run finishes">
+    `GET /api/v1/chats/{chatId}/runs/{runId}` until `status` is `COMPLETE`, `FAILED`, or `CANCELLED`. Partial text, tool outcomes, and the error message are on that snapshot.
+  </Step>
+  <Step title="Subscribe to webhooks">
+    Register an HTTPS endpoint for `agent.started`, `agent.completed`, `agent.failed`, and `tool.completed`. Verify `X-Galaxy-Signature` with the signing secret.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Make the first API call" icon="circle-play" href="/quickstart">
+    Shortest path from an API key to a queued run.
+  </Card>
+  <Card title="Authenticate" icon="key" href="/authentication">
+    Create, send, and revoke `gxk_live_…` keys.
+  </Card>
+</CardGroup>
 
 ## What you can do
 
-| Action | Method | Path |
-| --- | --- | --- |
-| List / create chats | GET, POST | `/chats` |
-| Get / delete a chat | GET, DELETE | `/chats/{chatId}` |
-| Read messages | GET | `/chats/{chatId}/messages` |
-| Send a turn | POST | `/chats/{chatId}/messages` |
-| Chat-style completion | POST | `/chats/{chatId}/completions` or `/completions` |
-| Run status | GET | `/chats/{chatId}/runs/{runId}` |
-| Magica Crop Image | POST | `/tools/crop_image` |
-| Magica GPT Image 2 | POST | `/tools/gpt_image_2` |
-| Magica Merge Videos | POST | `/tools/merge_videos` |
+<CardGroup cols={2}>
+  <Card title="Chats" icon="messages" href="/chats">
+    Create, list, read, and delete conversations.
+  </Card>
+  <Card title="Messages and completions" icon="paper-plane" href="/messages">
+    Send a turn or a chat-style completion. Both return a `runId`.
+  </Card>
+  <Card title="Runs" icon="clock" href="/runs">
+    Poll status, tools, waitpoints, and partial assistant output.
+  </Card>
+  <Card title="Magica tools" icon="image" href="/magica">
+    Crop Image, GPT Image 2, and Merge Videos in one blocking call.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/webhooks">
+    Signed lifecycle events. The secret is shown once.
+  </Card>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    Status codes, error envelope, and what does not use HTTP 504.
+  </Card>
+</CardGroup>
 
-Sends and completions return quickly with `{ chatId, messageId, runId, status: "queued" }`. Poll run status until `COMPLETE`, `FAILED`, or `CANCELLED`. Magica tool routes wait on the provider and return the result in the same HTTP call (up to 5 minutes).
+## Why this shape
+
+<CardGroup cols={3}>
+  <Card title="Turns are durable" icon="database">
+    Send and completion return `queued`. Postgres is the source of truth while the agent runs.
+  </Card>
+  <Card title="One active run" icon="lock">
+    A second send in the same chat returns `409 RUN_ACTIVE` instead of starting duplicate work.
+  </Card>
+  <Card title="Tools you can call directly" icon="cubes">
+    The three required Magica models are also `POST /api/v1/tools/…` and wait for the provider.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="circle-play" href="/quickstart">
+    Create a key, queue a turn, and poll the run.
+  </Card>
+  <Card title="Run status" icon="code" href="/runs">
+    Status enum, waitpoints, partial output, and when to stop polling.
+  </Card>
+</CardGroup>

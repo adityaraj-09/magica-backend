@@ -1,27 +1,42 @@
 ---
 title: Authentication
-description: Bearer API keys for /api/v1. Keys are shown once.
+description: Bearer API keys for /api/v1. The full key is shown once.
 ---
 
-Create a key while signed in to the product:
+Public routes do not use Clerk. A missing, malformed, or revoked key returns `401` with code `UNAUTHORIZED`.
 
-```bash
-POST /api/keys
+```
+Authorization: Bearer gxk_live_…
+```
+
+## Create a key
+
+`POST /api/keys` requires the signed-in product session, not an API key.
+
+<ParamField body="name" type="string" required>
+  Label, 1–80 characters. Example: `ci`.
+</ParamField>
+
+```json
 { "name": "ci" }
 ```
 
-Response includes `key` once (`gxk_live_…`). Store it; list endpoints only return `prefix`.
+<ResponseField name="key" type="string">
+  Full secret, prefix `gxk_live_`. Returned only on create.
+</ResponseField>
+<ResponseField name="id" type="string">
+  Use this id to revoke the key.
+</ResponseField>
+<ResponseField name="prefix" type="string">
+  First characters of the key. This is all that list returns.
+</ResponseField>
 
-Call the public API with:
+## List and revoke
 
-```
-Authorization: Bearer gxk_live_...
-```
+`GET /api/keys` returns active keys for the signed-in user: `id`, `name`, `prefix`, `lastUsedAt`, `createdAt`. It never returns `key`.
 
-`/api/v1` is not behind Clerk. A missing, malformed, or revoked key returns `401 UNAUTHORIZED`.
+`DELETE /api/keys/{keyId}` revokes the key. Later public calls with that secret return `401`.
 
-Revoke:
-
-```
-DELETE /api/keys/{keyId}
-```
+<Warning>
+  Treat `gxk_live_…` like a password. If you lose it, revoke the key and create another. The API cannot show it again.
+</Warning>

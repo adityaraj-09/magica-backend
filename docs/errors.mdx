@@ -1,6 +1,6 @@
 ---
 title: Errors
-description: JSON error envelope used by the public API.
+description: JSON error envelope, status codes, and which failures stay on the run.
 ---
 
 Failed requests return:
@@ -14,12 +14,19 @@ Failed requests return:
 
 | Status | Code | When |
 | --- | --- | --- |
-| 400 | `INVALID_REQUEST` | Zod validation failed |
-| 401 | `UNAUTHORIZED` | Missing/invalid API key or Magica 401 |
-| 402 | `CREDITS_INSUFFICIENT` | Not enough reserved credits |
-| 404 | `CHAT_NOT_FOUND` / `RUN_NOT_FOUND` / `UNKNOWN_TOOL` | Ownership hide or unknown Magica tool |
-| 409 | `RUN_ACTIVE` | Another turn is running in the chat |
-| 429 | `RATE_LIMITED` | Send window exceeded; `Retry-After` is set |
-| 504 | `TIMEOUT` | Magica poll timed out |
+| 400 | `INVALID_REQUEST` | Body failed validation |
+| 400 | `INVALID_CURSOR` | `cursor` is not a valid page token |
+| 401 | `UNAUTHORIZED` | Missing, malformed, or revoked API key |
+| 402 | `CREDITS_INSUFFICIENT` | Not enough reserved credits to admit the turn |
+| 404 | `CHAT_NOT_FOUND` | Unknown chat, or a chat owned by someone else |
+| 404 | `RUN_NOT_FOUND` | Run id is missing or not in that chat |
+| 404 | `UNKNOWN_TOOL` | `/tools/{name}` is not crop, GPT Image 2, or merge |
+| 409 | `RUN_ACTIVE` | This chat already has a turn in progress |
+| 429 | `RATE_LIMITED` | Send window exceeded. `Retry-After` is set |
+| 504 | `TIMEOUT` | A direct Magica tool poll timed out |
 
-Long-running agent turns do not use HTTP 504. They stay `queued` until you poll `/runs/{runId}`.
+<Note>
+  Agent turns do not fail the HTTP send with `504`. Send and completion return `queued`. Timeouts, model failures, and credit stops show up later as `FAILED` on the run snapshot, with `errorCode` and `errorMessage`.
+</Note>
+
+A second send while a run is active does not start duplicate work. Wait until the snapshot is terminal, or read `409 RUN_ACTIVE` and poll the existing `runId`.

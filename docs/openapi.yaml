@@ -1,0 +1,549 @@
+openapi: 3.1.0
+info:
+  title: Galaxy Agent API
+  version: "1.0.0"
+  description: |
+    Public REST for agent chats, Magica tools, and run status.
+    Authenticate with `Authorization: Bearer gxk_live_…`.
+servers:
+  - url: https://YOUR_BACKEND/api/v1
+    description: Public API
+security:
+  - bearerAuth: []
+tags:
+  - name: Chats
+  - name: Messages
+  - name: Runs
+  - name: Magica
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: API key created in the product. Shown once, prefix `gxk_live_`.
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          examples: [UNAUTHORIZED, CHAT_NOT_FOUND, RUN_ACTIVE]
+    Chat:
+      type: object
+      required: [id, title, isFavorite, lastMessageAt, lastMessageId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        isFavorite:
+          type: boolean
+        lastMessageAt:
+          type: string
+          format: date-time
+        lastMessageId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChatList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chat"
+        nextCursor:
+          type: string
+          nullable: true
+    QueuedTurn:
+      type: object
+      required: [chatId, messageId, runId, triggerRunId, status]
+      properties:
+        chatId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+        runId:
+          type: string
+          format: uuid
+        triggerRunId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [queued]
+    SendBody:
+      type: object
+      properties:
+        text:
+          type: string
+          maxLength: 8192
+        prompt:
+          type: string
+          description: Completion alias for `text`.
+        messages:
+          type: array
+          description: OpenAI-style messages. The last user content is the turn text.
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+        clientMessageId:
+          type: string
+          format: uuid
+        planMode:
+          type: boolean
+        attachmentIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        chatId:
+          type: string
+          format: uuid
+          description: Only on `POST /completions`. Omitted creates a chat.
+    RunSnapshot:
+      type: object
+      required: [chatId, runId, messageId, status]
+      properties:
+        chatId:
+          type: string
+          format: uuid
+        runId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+        assistantMessageId:
+          type: string
+          format: uuid
+          nullable: true
+        triggerRunId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [QUEUED, THINKING, WORKING, WAITING, STOPPING, COMPLETE, FAILED, CANCELLED]
+        currentStep:
+          type: string
+          nullable: true
+        thinkingDurationMs:
+          type: integer
+          nullable: true
+        progressPercent:
+          type: integer
+          nullable: true
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        tools:
+          type: array
+          items:
+            type: object
+            properties:
+              toolCallId:
+                type: string
+              toolName:
+                type: string
+              status:
+                type: string
+                enum: [PENDING, RUNNING, SUCCESS, FAILED, CANCELLED]
+              errorMessage:
+                type: string
+                nullable: true
+        waitpoint:
+          type: object
+          nullable: true
+          properties:
+            waitpointId:
+              type: string
+              format: uuid
+            type:
+              type: string
+              enum: [OPTIONS, PLAN, CREDIT, MEDIA]
+            status:
+              type: string
+              enum: [WAITING, COMPLETED, EXPIRED, CANCELLED]
+            timeoutAt:
+              type: string
+              format: date-time
+            payload: {}
+        assistant:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            contentBlocks:
+              type: array
+              items: {}
+    ToolResult:
+      type: object
+      required: [toolName, output, assets, creditCost, durationMs]
+      properties:
+        toolName:
+          type: string
+        output: {}
+        assets:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              mimeType:
+                type: string
+              filename:
+                type: string
+        creditCost:
+          type: string
+        providerRunId:
+          type: string
+        durationMs:
+          type: integer
+  parameters:
+    chatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+paths:
+  /chats:
+    get:
+      tags: [Chats]
+      summary: List chats
+      operationId: listChats
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: favorite
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Chat page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatList"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Chats]
+      summary: Create a chat
+      operationId: createChat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 120
+      responses:
+        "201":
+          description: Created chat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+  /chats/{chatId}:
+    get:
+      tags: [Chats]
+      summary: Get a chat
+      operationId: getChat
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+      responses:
+        "200":
+          description: Chat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chat"
+        "404":
+          description: Not found, including chats owned by someone else
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Chats]
+      summary: Delete a chat
+      operationId: deleteChat
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+      responses:
+        "204":
+          description: Soft-deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /chats/{chatId}/messages:
+    get:
+      tags: [Messages]
+      summary: List messages
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages, newest first, with content blocks and attachments
+    post:
+      tags: [Messages]
+      summary: Send a message
+      operationId: sendMessage
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendBody"
+      responses:
+        "201":
+          description: Turn queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTurn"
+        "200":
+          description: Replay of the same clientMessageId
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTurn"
+        "409":
+          description: A turn is already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Send rate limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /chats/{chatId}/completions:
+    post:
+      tags: [Messages]
+      summary: Chat-style completion
+      operationId: chatCompletion
+      description: Same admission as send. Accepts `text`, `prompt`, or OpenAI-style `messages`.
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendBody"
+      responses:
+        "202":
+          description: Turn queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTurn"
+        "200":
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTurn"
+  /completions:
+    post:
+      tags: [Messages]
+      summary: Completion, creating a chat if needed
+      operationId: completion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendBody"
+      responses:
+        "202":
+          description: Turn queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueuedTurn"
+  /chats/{chatId}/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Get run status
+      operationId: getRun
+      description: |
+        Poll until status is COMPLETE, FAILED, or CANCELLED.
+        The public snapshot does not mint a realtime token.
+      parameters:
+        - $ref: "#/components/parameters/chatId"
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Run snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunSnapshot"
+        "404":
+          description: Run or chat was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /tools/crop_image:
+    post:
+      tags: [Magica]
+      summary: Crop an image
+      operationId: cropImage
+      description: Blocks until Magica finishes. Exactly one crop rectangle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image_url]
+              properties:
+                image_url:
+                  type: string
+                x_percent:
+                  type: number
+                y_percent:
+                  type: number
+                width_percent:
+                  type: number
+                height_percent:
+                  type: number
+      responses:
+        "200":
+          description: Tool result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResult"
+        "504":
+          description: Magica poll timed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /tools/gpt_image_2:
+    post:
+      tags: [Magica]
+      summary: Generate or edit an image
+      operationId: gptImage2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                image_url:
+                  type: string
+                  description: Present for edit mode.
+      responses:
+        "200":
+          description: Tool result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResult"
+  /tools/merge_videos:
+    post:
+      tags: [Magica]
+      summary: Merge videos
+      operationId: mergeVideos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [video_urls]
+              properties:
+                video_urls:
+                  type: array
+                  items:
+                    type: string
+                transition:
+                  type: string
+                  enum: [none, fade, dissolve]
+      responses:
+        "200":
+          description: Tool result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolResult"

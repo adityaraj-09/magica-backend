@@ -3,9 +3,15 @@ title: Magica tools
 description: Direct Crop Image, GPT Image 2, and Merge Videos execution.
 ---
 
-These routes call Magica end to end (not stubs). They block until the provider run completes.
+These routes call Magica end to end. They block until the provider finishes, up to 5 minutes, and return the result in the same HTTP response. A provider poll that exceeds that window is `504 TIMEOUT`.
 
-## POST `/api/v1/tools/crop_image`
+A success also emits `tool.completed`. Result URLs are copied to object storage when it is configured.
+
+## Crop Image
+
+`POST /api/v1/tools/crop_image`
+
+Provide exactly one complete rectangle: percent fields, pixel `x` / `y` / `width` / `height`, or `crop.{x,y,width,height}`.
 
 ```json
 {
@@ -17,17 +23,19 @@ These routes call Magica end to end (not stubs). They block until the provider r
 }
 ```
 
-Pixel `x/y/width/height` or `crop.{x,y,width,height}` are also accepted. Provide exactly one complete rectangle.
+## GPT Image 2
 
-## POST `/api/v1/tools/gpt_image_2`
+`POST /api/v1/tools/gpt_image_2`
 
 ```json
 { "prompt": "a red square on white" }
 ```
 
-Add `image_url` to run edit mode (`gpt-image-2-edit`).
+Add `image_url` to run edit mode.
 
-## POST `/api/v1/tools/merge_videos`
+## Merge Videos
+
+`POST /api/v1/tools/merge_videos`
 
 ```json
 {
@@ -36,19 +44,36 @@ Add `image_url` to run edit mode (`gpt-image-2-edit`).
 }
 ```
 
-`transition` is `none` | `fade` | `dissolve`.
+`transition` is `none`, `fade`, or `dissolve`.
 
 ## Response
+
+<ResponseField name="toolName" type="string">
+  `crop_image`, `gpt_image_2`, or `merge_videos`.
+</ResponseField>
+<ResponseField name="output" type="object">
+  Provider output, including the result URL.
+</ResponseField>
+<ResponseField name="assets" type="object[]">
+  `{ url, mimeType, filename? }` after durable copy when storage is configured.
+</ResponseField>
+<ResponseField name="creditCost" type="string">
+  Credits charged for this call.
+</ResponseField>
+<ResponseField name="providerRunId" type="string">
+  Magica run id.
+</ResponseField>
+<ResponseField name="durationMs" type="integer" />
 
 ```json
 {
   "toolName": "crop_image",
-  "output": { "image_url": "https://..." },
-  "assets": [{ "url": "https://...", "mimeType": "image/png" }],
+  "output": { "image_url": "https://…" },
+  "assets": [{ "url": "https://…", "mimeType": "image/png" }],
   "creditCost": "0",
-  "providerRunId": "...",
+  "providerRunId": "…",
   "durationMs": 1200
 }
 ```
 
-Result URLs are copied to R2/S3 when object storage is configured. `tool.completed` webhooks fire after a successful public tool call.
+Any other `{toolName}` returns `404 UNKNOWN_TOOL`.

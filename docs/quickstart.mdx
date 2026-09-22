@@ -1,0 +1,58 @@
+---
+title: Quickstart
+description: Create a key, queue a turn, and poll until the run finishes.
+---
+
+Set `BASE` to your backend origin. Keys are created while you are signed in. Public calls use the key, not the session.
+
+<Steps>
+  <Step title="Create an API key">
+    In the product, open **API / MCP** and create a key. Or, with a signed-in session:
+
+    ```bash
+    curl -X POST "$BASE/api/keys" \
+      -H "Authorization: Bearer $CLERK_SESSION_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"local"}'
+    ```
+
+    Store the `key` field. Later list calls only return `prefix`.
+  </Step>
+  <Step title="Queue a completion">
+    ```bash
+    curl -X POST "$BASE/api/v1/completions" \
+      -H "Authorization: Bearer $GALAXY_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"text":"Summarize what this agent can do"}'
+    ```
+
+    Response `202`:
+
+    ```json
+    {
+      "chatId": "…",
+      "messageId": "…",
+      "runId": "…",
+      "triggerRunId": "…",
+      "status": "queued"
+    }
+    ```
+  </Step>
+  <Step title="Poll the run">
+    ```bash
+    curl "$BASE/api/v1/chats/$CHAT_ID/runs/$RUN_ID" \
+      -H "Authorization: Bearer $GALAXY_API_KEY"
+    ```
+
+    Stop when `status` is `COMPLETE`, `FAILED`, or `CANCELLED`. Read `assistant.contentBlocks` for the reply and `errorMessage` if it failed.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Send into an existing chat" icon="messages" href="/messages">
+    `POST /chats/{chatId}/messages` with `text`, `planMode`, and `attachmentIds`.
+  </Card>
+  <Card title="Call a Magica tool" icon="image" href="/magica">
+    Crop, generate, or merge without waiting on the agent loop.
+  </Card>
+</CardGroup>

@@ -3,10 +3,41 @@ title: Runs
 description: Poll the durable agent turn. Postgres is the source of truth.
 ---
 
-## GET `/api/v1/chats/{chatId}/runs/{runId}`
+`GET /api/v1/chats/{chatId}/runs/{runId}`
 
-Returns status (`QUEUED` → `THINKING` → `WORKING` → `WAITING` / `STOPPING` / `COMPLETE` / `FAILED` / `CANCELLED`), current step, tools, waitpoint overlay, and the assistant message so far.
+Send and completion return before the model finishes. Poll this route. The public snapshot does not include a realtime token.
 
-Poll this after send/completion. Realtime tokens are a product-UI concern and are not minted on the public snapshot.
+## Status
 
-Timed-out waitpoints are expired on read so a stale overlay does not stick.
+`QUEUED` → `THINKING` → `WORKING` → `WAITING` or `STOPPING` → `COMPLETE`, `FAILED`, or `CANCELLED`.
+
+<ResponseField name="status" type="string">
+  Terminal values are `COMPLETE`, `FAILED`, and `CANCELLED`.
+</ResponseField>
+<ResponseField name="currentStep" type="string">
+  What the loop is doing now. Null when idle.
+</ResponseField>
+<ResponseField name="progressPercent" type="integer">
+  Coarse progress, 0–100.
+</ResponseField>
+<ResponseField name="tools" type="object[]">
+  Each tool call: `toolCallId`, `toolName`, `status` (`PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `CANCELLED`), and `errorMessage`.
+</ResponseField>
+<ResponseField name="waitpoint" type="object">
+  Present while the turn is paused. `type` is `PLAN`, `CREDIT`, `MEDIA`, or `OPTIONS`. An unanswered waitpoint expires on read so a stale overlay does not stick. `timeoutAt` is when it expires.
+</ResponseField>
+<ResponseField name="assistant" type="object">
+  Assistant message so far: `id`, `status`, and `contentBlocks` (text, thinking, tool use, tool result, assets).
+</ResponseField>
+<ResponseField name="errorCode" type="string">
+  Set when the turn failed. Pair with `errorMessage`.
+</ResponseField>
+<ResponseField name="errorMessage" type="string">
+  Safe message you can show. Partial text and successful tool results stay on the snapshot.
+</ResponseField>
+
+<Note>
+  Credit exhaustion stops the turn safely. Completed tool work stays on the snapshot. The run ends `FAILED` rather than dropping the chat.
+</Note>
+
+Poll with bounded backoff. If a request fails on the network, retry the same GET. The snapshot is the reconciliation point. Do not send a new message until the status is terminal, or you will get `409 RUN_ACTIVE`.

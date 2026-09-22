@@ -3,26 +3,25 @@ title: Webhooks
 description: Signed outbound events for agent and tool lifecycle.
 ---
 
-Register an HTTPS endpoint while signed in:
+Register an HTTPS endpoint while signed in. `POST /api/webhook-endpoints` returns `secret` once (`gwhsec_…`). List and later reads never include it.
 
-```bash
-POST /api/webhook-endpoints
+```json
 {
   "url": "https://example.com/galaxy-hooks",
   "events": ["agent.started", "agent.completed", "agent.failed", "tool.completed"]
 }
 ```
 
-The response includes `secret` once (`gwhsec_…`). List endpoints never return it.
+`DELETE /api/webhook-endpoints/{endpointId}` removes it. `GET /api/webhook-endpoints` lists `id`, `url`, `events`, `isActive`, and `createdAt`.
 
 ## Events
 
 | Event | When |
 | --- | --- |
-| `agent.started` | Orchestrator begins a turn |
-| `agent.completed` | Turn finished `COMPLETE` |
-| `agent.failed` | Turn finished `FAILED` / `CANCELLED`, or the task threw |
-| `tool.completed` | A tool (agent loop or public Magica route) succeeded |
+| `agent.started` | The orchestrator begins a turn |
+| `agent.completed` | The turn finished `COMPLETE` |
+| `agent.failed` | The turn finished `FAILED` or `CANCELLED`, or the task threw |
+| `tool.completed` | A tool succeeded in the agent loop or on a public Magica route |
 
 ## Envelope
 
@@ -30,32 +29,44 @@ The response includes `secret` once (`gwhsec_…`). List endpoints never return 
 {
   "id": "wh:{endpointId}:{event}:{idempotency}",
   "event": "agent.completed",
-  "createdAt": "2026-09-21T12:00:00.000Z",
+  "createdAt": "2026-09-22T07:00:00.000Z",
   "data": {
-    "chatId": "...",
-    "runId": "...",
-    "messageId": "...",
-    "traceId": "...",
-    "status": "COMPLETE"
+    "chatId": "…",
+    "runId": "…",
+    "messageId": "…",
+    "traceId": "…",
+    "processId": "…",
+    "status": "COMPLETE",
+    "assistantMessageId": "…"
   }
 }
 ```
 
+`agent.started` uses `status: "QUEUED"`. `agent.failed` uses `FAILED` or `CANCELLED`, and a thrown turn adds `error`. `tool.completed` `data` includes `toolName`, `output`, `assets`, `creditCost`, and `durationMs`.
+
 ## Signature
 
-Headers:
+<ParamField header="x-galaxy-signature" type="string">
+  `sha256=<hex>`.
+</ParamField>
+<ParamField header="x-galaxy-timestamp" type="string">
+  Unix seconds used in the HMAC.
+</ParamField>
+<ParamField header="x-galaxy-event" type="string">
+  Event name.
+</ParamField>
+<ParamField header="x-galaxy-delivery-id" type="string">
+  Delivery row id.
+</ParamField>
 
-- `X-Galaxy-Signature`: `sha256=<hex>`
-- `X-Galaxy-Timestamp`: unix seconds
-- `X-Galaxy-Event`
-- `X-Galaxy-Delivery-Id`
+Verify with the raw body, not a re-serialized object:
 
-Verify:
-
-```
+```text
 HMAC_SHA256(secret, `${timestamp}.${rawBody}`)
 ```
 
-Compare to the hex after `sha256=` with a constant-time check. Replay-safe: deliveries use a unique idempotency key per endpoint+event+run (or tool call). Duplicate emits are not posted twice.
+Compare the hex after `sha256=` with a constant-time check.
 
-Timeouts and non-2xx responses mark the delivery `FAILED` and never fail the agent turn.
+<Note>
+  Each endpoint, event, and run (or tool call) is delivered once. A duplicate emit is not posted again. Timeouts and non-2xx responses mark that delivery `FAILED` and do not fail the agent turn.
+</Note>

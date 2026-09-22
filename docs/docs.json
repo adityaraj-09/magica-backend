@@ -2,25 +2,39 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Galaxy Agent API",
-  "description": "Versioned public REST API for Galaxy agent chats, Magica tools, and signed webhooks.",
+  "description": "Versioned public REST for agent chats, Magica tools, run polling, and signed webhooks.",
   "colors": {
-    "primary": "#111111",
-    "light": "#111111",
-    "dark": "#FFFFFF"
+    "primary": "#1b1b1b",
+    "light": "#1b1b1b",
+    "dark": "#ffffff"
+  },
+  "appearance": {
+    "default": "light"
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Quickstart",
+      "href": "/quickstart"
+    }
   },
   "navigation": {
     "groups": [
       {
         "group": "Get started",
-        "pages": ["index", "authentication", "errors"]
+        "pages": ["index", "quickstart", "authentication", "errors"]
       },
       {
-        "group": "Resources",
+        "group": "Guides",
         "pages": ["chats", "messages", "runs", "magica"]
       },
       {
         "group": "Webhooks",
         "pages": ["webhooks"]
+      },
+      {
+        "group": "API reference",
+        "openapi": "openapi.yaml"
       }
     ]
   }

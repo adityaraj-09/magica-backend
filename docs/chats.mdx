@@ -3,18 +3,62 @@ title: Chats
 description: Create, list, read, and delete conversations.
 ---
 
-## POST `/api/v1/chats`
+Chats belong to the user behind the API key. Another user's id is `404 CHAT_NOT_FOUND`.
+
+## Create
+
+`POST /api/v1/chats` returns `201`.
+
+<ParamField body="title" type="string">
+  Optional. 1–120 characters. Omitted titles get a default.
+</ParamField>
 
 ```json
 { "title": "Launch plan" }
 ```
 
-## GET `/api/v1/chats`
+<ResponseExample>
 
-Cursor pagination: `limit` (1–50), `cursor`, optional `q` and `favorite=true`. Newest first on `(createdAt, id)`.
+```json
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "title": "Launch plan",
+  "isFavorite": false,
+  "lastMessageAt": "2026-09-22T07:00:00.000Z",
+  "lastMessageId": null,
+  "createdAt": "2026-09-22T07:00:00.000Z",
+  "updatedAt": "2026-09-22T07:00:00.000Z"
+}
+```
 
-## GET `/api/v1/chats/{chatId}`
+</ResponseExample>
 
-## DELETE `/api/v1/chats/{chatId}`
+## List
 
-Soft-deletes. Another user's id returns `404 CHAT_NOT_FOUND`.
+`GET /api/v1/chats`
+
+<ParamField query="limit" type="integer" default="20">
+  Page size, 1–50.
+</ParamField>
+<ParamField query="cursor" type="string">
+  Pass `nextCursor` from the previous page.
+</ParamField>
+<ParamField query="q" type="string">
+  Title search.
+</ParamField>
+<ParamField query="favorite" type="string">
+  `true` or `false`.
+</ParamField>
+
+```json
+{
+  "items": [],
+  "nextCursor": null
+}
+```
+
+Newest first. `GET /api/v1/chats/{chatId}` returns one chat object.
+
+## Delete
+
+`DELETE /api/v1/chats/{chatId}` returns `204`. The row is soft-deleted. A repeat delete of someone else's chat is `404`.

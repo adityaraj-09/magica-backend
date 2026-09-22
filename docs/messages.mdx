@@ -1,39 +1,69 @@
 ---
 title: Messages and completions
-description: Send a durable agent turn or a chat-style completion.
+description: Submit a durable agent turn. The HTTP call returns as soon as the run is queued.
 ---
 
-## POST `/api/v1/chats/{chatId}/messages`
+All three send routes admit one turn. They share the same body fields. A repeat `clientMessageId` replays the original admission and does not start a second run.
+
+## Request
+
+<ParamField body="text" type="string">
+  Turn text, up to 8192 characters. Required unless `prompt` or `messages` supplies it.
+</ParamField>
+<ParamField body="prompt" type="string">
+  Alias of `text` on completion routes.
+</ParamField>
+<ParamField body="messages" type="object[]">
+  OpenAI-style `{ role, content }`. The last `user` message is the turn text.
+</ParamField>
+<ParamField body="clientMessageId" type="string">
+  UUID. Same id returns the original `200` replay.
+</ParamField>
+<ParamField body="planMode" type="boolean">
+  When true, the agent pauses for plan approval before tools.
+</ParamField>
+<ParamField body="attachmentIds" type="string[]">
+  Owned, complete, unexpired uploads. Same-chat files are direct uploads; others come from the library.
+</ParamField>
+<ParamField body="chatId" type="string">
+  Only on `POST /api/v1/completions`. Omitted creates a chat, then admits the turn.
+</ParamField>
 
 ```json
 {
   "text": "Crop the attached photo",
-  "clientMessageId": "11111111-1111-1111-1111-111111111111",
+  "clientMessageId": "11111111-1111-4111-8111-111111111111",
   "planMode": false,
   "attachmentIds": []
 }
 ```
 
-Returns `201` (or `200` on `clientMessageId` replay):
+## Response
 
-```json
-{
-  "chatId": "...",
-  "messageId": "...",
-  "runId": "...",
-  "triggerRunId": "...",
-  "status": "queued"
-}
-```
+`POST /chats/{chatId}/messages` returns `201`, or `200` when `clientMessageId` is replayed. `POST /chats/{chatId}/completions` returns `202`, or `200` on replay. `POST /completions` returns `202`.
 
-## POST `/api/v1/chats/{chatId}/completions`
+<ResponseField name="chatId" type="string" />
+<ResponseField name="messageId" type="string" />
+<ResponseField name="runId" type="string">
+  Poll this on the runs route.
+</ResponseField>
+<ResponseField name="triggerRunId" type="string">
+  Orchestrator id. Nullable if dispatch has not attached yet.
+</ResponseField>
+<ResponseField name="status" type="string">
+  Always `queued` at admission. Later states are on the run snapshot.
+</ResponseField>
 
-Same admission as send. Body may use `text`, `prompt`, or OpenAI-style `messages` (last `user` content). Returns `202`.
+## Routes
 
-## POST `/api/v1/completions`
+| Method | Path | When |
+| --- | --- | --- |
+| POST | `/api/v1/chats/{chatId}/messages` | Existing chat |
+| POST | `/api/v1/chats/{chatId}/completions` | Same admission, chat-style body |
+| POST | `/api/v1/completions` | Creates a chat when `chatId` is omitted |
 
-Creates a chat when `chatId` is omitted, then admits the turn.
+`GET /api/v1/chats/{chatId}/messages` lists history, newest first, with `limit` and `cursor`. Each message includes `contentBlocks` and `attachments`.
 
-## GET `/api/v1/chats/{chatId}/messages`
-
-Newest messages first with `limit` + `cursor`. Includes content blocks and attachments.
+<Note>
+  One active run per chat. A second send before the run reaches `COMPLETE`, `FAILED`, or `CANCELLED` returns `409 RUN_ACTIVE`.
+</Note>
