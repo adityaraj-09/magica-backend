@@ -142,10 +142,60 @@ components:
           description: Single public image URL. Same as `image_urls` with one item.
         attachmentIds:
           type: array
-          description: IDs of files you already uploaded in the product. Optional if you pass `image_urls`.
+          description: IDs from `POST /uploads` or files already in the product. Optional if you upload `file` or pass `image_urls`.
           items:
             type: string
             format: uuid
+    MultipartSend:
+      type: object
+      properties:
+        text:
+          type: string
+        prompt:
+          type: string
+        chatId:
+          type: string
+          format: uuid
+          description: Only on `POST /completions`. Omit to create a chat.
+        planMode:
+          type: boolean
+        file:
+          type: string
+          format: binary
+          description: Image or video to attach. Repeat the field or use `files` for more than one. Max 20 MB each, 8 files.
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+        image:
+          type: string
+          format: binary
+    UploadResult:
+      type: object
+      required: [chatId, attachments]
+      properties:
+        chatId:
+          type: string
+          format: uuid
+        attachments:
+          type: array
+          items:
+            type: object
+            required: [id, filename, mimeType, status]
+            properties:
+              id:
+                type: string
+                format: uuid
+              filename:
+                type: string
+              mimeType:
+                type: string
+              url:
+                type: string
+                nullable: true
+              status:
+                type: string
     CompletionBody:
       allOf:
         - $ref: "#/components/schemas/SendBody"
@@ -409,6 +459,9 @@ paths:
                   text: What is in this photo?
                   image_urls:
                     - https://cdn.example.com/photo.jpg
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/MultipartSend"
       responses:
         "201":
           description: Turn queued
@@ -439,7 +492,7 @@ paths:
       tags: [Messages]
       summary: Chat-style completion in an existing chat
       operationId: chatCompletion
-      description: Same as send on an existing chat. Accepts `text`, `prompt`, or OpenAI-style `messages`, plus `image_urls`.
+      description: Same as send on an existing chat. JSON (`image_urls` / `attachmentIds`) or multipart (`file`).
       parameters:
         - $ref: "#/components/parameters/chatId"
       requestBody:
@@ -455,6 +508,9 @@ paths:
                   text: Crop the subject
                   image_urls:
                     - https://cdn.example.com/photo.jpg
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/MultipartSend"
       responses:
         "202":
           description: Turn queued
@@ -475,7 +531,7 @@ paths:
       description: |
         One-call send. Omit `chatId` to create a chat and queue the turn.
         Pass `chatId` to continue an existing chat.
-        Attach images with `image_urls` (public http(s) URLs) or `attachmentIds`.
+        Attach a file with multipart `file`, or pass `image_urls` / `attachmentIds` in JSON.
       operationId: completion
       requestBody:
         required: true
@@ -499,6 +555,15 @@ paths:
                 summary: Text only, new chat
                 value:
                   text: Summarize what this agent can do
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/MultipartSend"
+            examples:
+              upload:
+                summary: Send a file without a URL
+                value:
+                  text: What is in this photo?
+                  file: (binary)
       responses:
         "202":
           description: Turn queued
@@ -506,6 +571,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueuedTurn"
+  /uploads:
+    post:
+      tags: [Messages]
+      summary: Upload a file
+      description: |
+        Multipart upload. Creates a chat when `chatId` is omitted.
+        Use the returned attachment `id` in `attachmentIds` on send, or send
+        the file in the same request on `/completions`.
+        Images, video, and audio. 20 MB per file, 8 files.
+      operationId: uploadFiles
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                chatId:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Files stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: Type or size rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: S3 or Transloadit is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /chats/{chatId}/runs/{runId}:
     get:
       tags: [Runs]

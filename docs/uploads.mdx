@@ -1,0 +1,56 @@
+---
+title: Upload files
+description: Send an image or video as a file. You do not need a public URL.
+---
+
+The product UI uploads through Transloadit with a signed-in session. The public API accepts the same files with your API key.
+
+You can **upload and send in one request**, or **upload first** and pass `attachmentIds`.
+
+## Upload and send
+
+`POST /api/v1/completions` as `multipart/form-data`. Omit `chatId` to create a chat.
+
+```bash
+curl -X POST "$BASE/api/v1/completions" \
+  -H "Authorization: Bearer $GALAXY_API_KEY" \
+  -F "text=What is in this photo?" \
+  -F "file=@./photo.jpg;type=image/jpeg"
+```
+
+The same `file` field works on `POST /api/v1/chats/{chatId}/messages`.
+
+## Upload only
+
+`POST /api/v1/uploads` stores the file and returns an attachment id.
+
+```bash
+curl -X POST "$BASE/api/v1/uploads" \
+  -H "Authorization: Bearer $GALAXY_API_KEY" \
+  -F "file=@./photo.jpg;type=image/jpeg"
+```
+
+```json
+{
+  "chatId": "…",
+  "attachments": [
+    {
+      "id": "…",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "url": "https://…",
+      "status": "COMPLETE"
+    }
+  ]
+}
+```
+
+Then send with `{ "text": "…", "attachmentIds": ["that-id"] }`.
+
+## Limits
+
+- Images, video, and audio (same types as the product uploader)
+- 20 MB per file, 8 files
+- Server needs **S3** or **Transloadit**. Otherwise `503 UPLOADS_UNAVAILABLE`
+
+`image_urls` still works when the file is already on the public web. You do not have to use a URL if you have the file.

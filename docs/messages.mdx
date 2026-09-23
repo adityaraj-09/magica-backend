@@ -24,8 +24,11 @@ All send routes admit one turn. They share the same body fields. A repeat `clien
 <ParamField body="planMode" type="boolean">
   When true, the agent pauses for plan approval before tools.
 </ParamField>
+<ParamField body="file" type="file">
+  Multipart only. Upload an image (or video/audio) in the same request. Field name `file`, `files`, or `image`. See [Upload files](/uploads).
+</ParamField>
 <ParamField body="image_urls" type="string[]">
-  Public `http(s)` image URLs to attach. The agent sees them as images. You do not upload to Transloadit first. At most 8 files when combined with `attachmentIds`.
+  Optional. Public `http(s)` URLs when you already have a hosted file. Not required if you upload `file`.
 </ParamField>
 <ParamField body="image_url" type="string">
   Single public image URL. Same as one item in `image_urls`.

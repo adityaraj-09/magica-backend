@@ -23,13 +23,13 @@ export BASE=https://magica-backend-oda9.onrender.com
     Store the `key` field. Later list calls only return `prefix`.
   </Step>
   <Step title="Send a message">
-    You do not create a chat first. Omit `chatId` and the API creates one.
+    You do not create a chat first. Omit `chatId` and the API creates one. Attach a file with multipart, or pass `image_urls` if you already have a URL.
 
     ```bash
     curl -X POST "$BASE/api/v1/completions" \
       -H "Authorization: Bearer $GALAXY_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{"text":"What is in this photo?","image_urls":["https://cdn.example.com/photo.jpg"]}'
+      -F "text=What is in this photo?" \
+      -F "file=@./photo.jpg;type=image/jpeg"
     ```
 
     Response `202`:

@@ -1,24 +1,21 @@
 import { NextResponse } from "next/server";
 import { jsonError } from "@/server/http/json-error";
 import { requireApiUser } from "@/server/public/api-keys";
-import { admitPublicSend } from "@/server/public/send";
+import { persistApiUploadFiles, readPublicRequest } from "@/server/uploads/api-upload";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
     const user = await requireApiUser({ authorization: request.headers.get("authorization") });
-    const admitted = await admitPublicSend({ user, request });
-    return NextResponse.json(
-      {
-        chatId: admitted.chatId,
-        messageId: admitted.messageId,
-        runId: admitted.runId,
-        triggerRunId: admitted.triggerRunId,
-        status: "queued",
-      },
-      { status: 202 },
-    );
+    const { fields, files } = await readPublicRequest(request);
+    const chatId = typeof fields.chatId === "string" ? fields.chatId : undefined;
+    const result = await persistApiUploadFiles({
+      userId: user.id,
+      chatId,
+      files,
+    });
+    return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return jsonError(error);
   }
