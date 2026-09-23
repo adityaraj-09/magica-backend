@@ -3,7 +3,11 @@ title: Quickstart
 description: Create a key, queue a turn, and poll until the run finishes.
 ---
 
-Set `BASE` to your backend origin. Keys are created while you are signed in. Public calls use the key, not the session.
+Set `BASE` to the API origin. Production is `https://magica-backend-oda9.onrender.com`. Keys are created while you are signed in. Public calls use the key, not the session.
+
+```bash
+export BASE=https://magica-backend-oda9.onrender.com
+```
 
 <Steps>
   <Step title="Create an API key">

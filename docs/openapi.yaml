@@ -6,8 +6,10 @@ info:
     Public REST for agent chats, Magica tools, and run status.
     Authenticate with `Authorization: Bearer gxk_live_…`.
 servers:
-  - url: https://YOUR_BACKEND/api/v1
-    description: Public API
+  - url: https://magica-backend-oda9.onrender.com/api/v1
+    description: Production
+  - url: http://localhost:4000/api/v1
+    description: Local
 security:
   - bearerAuth: []
 tags:
