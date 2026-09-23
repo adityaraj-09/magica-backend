@@ -44,7 +44,7 @@ Base URL: `https://magica-backend-oda9.onrender.com` — public routes are under
     Create, list, read, and delete conversations.
   </Card>
   <Card title="Messages and completions" icon="paper-plane" href="/messages">
-    Send a turn or a chat-style completion. Both return a `runId`.
+    Send a message. Omit `chatId` on `/completions` to start a chat. Returns a `runId`.
   </Card>
   <Card title="Runs" icon="clock" href="/runs">
     Poll status, tools, waitpoints, and partial assistant output.

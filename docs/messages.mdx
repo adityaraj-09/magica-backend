@@ -3,55 +3,49 @@ title: Messages and completions
 description: Submit a durable agent turn. The HTTP call returns as soon as the run is queued.
 ---
 
-You do **not** have to create a chat first. `POST /api/v1/completions` without `chatId` creates a chat and queues the turn. `POST /api/v1/chats` then `POST /api/v1/chats/{chatId}/messages` is still supported when you want an empty chat or a title first.
+There is one send route: `POST /api/v1/completions`. Omit `chatId` to create a chat and queue the turn. Pass `chatId` to continue an existing chat. `POST /api/v1/chats` is optional when you want an empty chat or a title first.
 
-All send routes admit one turn. They share the same body fields. A repeat `clientMessageId` replays the original admission and does not start a second run.
+Send **text and an image in one request**. Use `multipart/form-data` with `text` + `file`. JSON is for text, or text plus a public `image_urls` if the file is already hosted.
 
 ## Request
 
-<ParamField body="text" type="string">
-  Turn text, up to 8192 characters. Required unless `prompt` or `messages` supplies it.
+<ParamField body="text" type="string" required>
+  The message to send, up to 8192 characters.
 </ParamField>
-<ParamField body="prompt" type="string">
-  Alias of `text` on completion routes.
+<ParamField body="file" type="file">
+  Multipart. Upload an image (or video/audio) in the same request as `text`. Repeat `file` or use `files` for more than one. See [Upload files](/uploads).
 </ParamField>
-<ParamField body="messages" type="object[]">
-  OpenAI-style `{ role, content }`. The last `user` message is the turn text.
+<ParamField body="image_urls" type="string[]">
+  JSON only. Public `http(s)` URLs when the file is already hosted.
 </ParamField>
-<ParamField body="clientMessageId" type="string">
-  UUID. Same id returns the original `200` replay.
+<ParamField body="attachmentIds" type="string[]">
+  IDs from `POST /uploads` or files already in the product.
 </ParamField>
 <ParamField body="planMode" type="boolean">
   When true, the agent pauses for plan approval before tools.
 </ParamField>
-<ParamField body="file" type="file">
-  Multipart only. Upload an image (or video/audio) in the same request. Field name `file`, `files`, or `image`. See [Upload files](/uploads).
-</ParamField>
-<ParamField body="image_urls" type="string[]">
-  Optional. Public `http(s)` URLs when you already have a hosted file. Not required if you upload `file`.
-</ParamField>
-<ParamField body="image_url" type="string">
-  Single public image URL. Same as one item in `image_urls`.
-</ParamField>
-<ParamField body="attachmentIds" type="string[]">
-  IDs of files you already uploaded in the product. Same-chat files are direct uploads; others come from the library.
-</ParamField>
 <ParamField body="chatId" type="string">
-  Only on `POST /api/v1/completions`. **Omit it to send a first message** (a chat is created). Pass it to continue an existing chat.
+  **Omit it to send a first message** (a chat is created). Pass it to continue an existing chat.
 </ParamField>
 
-```json
-{
-  "text": "What is in this photo?",
-  "image_urls": ["https://cdn.example.com/photo.jpg"],
-  "clientMessageId": "11111111-1111-4111-8111-111111111111",
-  "planMode": false
-}
+```bash
+curl -X POST "$BASE/api/v1/completions" \
+  -H "Authorization: Bearer $GALAXY_API_KEY" \
+  -F "text=What is in this photo?" \
+  -F "file=@./photo.jpg;type=image/jpeg"
+```
+
+```bash
+curl -X POST "$BASE/api/v1/completions" \
+  -H "Authorization: Bearer $GALAXY_API_KEY" \
+  -F "chatId=$CHAT_ID" \
+  -F "text=What is in this photo?" \
+  -F "file=@./photo.jpg;type=image/jpeg"
 ```
 
 ## Response
 
-`POST /chats/{chatId}/messages` returns `201`, or `200` when `clientMessageId` is replayed. `POST /chats/{chatId}/completions` returns `202`, or `200` on replay. `POST /completions` returns `202`.
+`POST /completions` returns `202`.
 
 <ResponseField name="chatId" type="string" />
 <ResponseField name="messageId" type="string" />
@@ -69,11 +63,10 @@ All send routes admit one turn. They share the same body fields. A repeat `clien
 
 | Method | Path | When |
 | --- | --- | --- |
-| POST | `/api/v1/completions` | **Preferred.** Omit `chatId` to start a chat, or pass it to continue |
-| POST | `/api/v1/chats/{chatId}/messages` | Existing chat only |
-| POST | `/api/v1/chats/{chatId}/completions` | Same admission, chat-style body |
+| POST | `/api/v1/completions` | Send. Omit `chatId` to start a chat, or pass it to continue |
+| GET | `/api/v1/chats/{chatId}/messages` | List history, newest first |
 
-`GET /api/v1/chats/{chatId}/messages` lists history, newest first, with `limit` and `cursor`. Each message includes `contentBlocks` and `attachments`.
+`GET` supports `limit` and `cursor`. Each message includes `contentBlocks` and `attachments`. If the message has files, `attachments[].id` is the attachment id (uploads on the user turn, generated images on the assistant turn).
 
 <Note>
   One active run per chat. A second send before the run reaches `COMPLETE`, `FAILED`, or `CANCELLED` returns `409 RUN_ACTIVE`.

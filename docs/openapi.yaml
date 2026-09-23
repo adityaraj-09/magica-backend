@@ -57,6 +57,102 @@ components:
         updatedAt:
           type: string
           format: date-time
+    MessageAttachment:
+      type: object
+      required: [id, filename, mimeType, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          description: DIRECT_UPLOAD, MEDIA_LIBRARY, or GENERATED
+        filename:
+          type: string
+        mimeType:
+          type: string
+        byteSize:
+          type: integer
+        url:
+          type: string
+          nullable: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+        status:
+          type: string
+        origin:
+          type: string
+        width:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          nullable: true
+        durationMs:
+          type: integer
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    Message:
+      type: object
+      required: [id, chatId, role, status, contentBlocks, createdAt, attachments]
+      properties:
+        id:
+          type: string
+          format: uuid
+        chatId:
+          type: string
+          format: uuid
+        role:
+          type: string
+        status:
+          type: string
+        contentBlocks:
+          type: array
+          items: {}
+        createdAt:
+          type: string
+          format: date-time
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        usage:
+          type: object
+          properties:
+            promptTokens:
+              type: integer
+            completionTokens:
+              type: integer
+            credits:
+              type: string
+            model:
+              type: string
+              nullable: true
+            durationMs:
+              type: integer
+              nullable: true
+        attachments:
+          type: array
+          description: Files on this message. User uploads and generated images include `id`.
+          items:
+            $ref: "#/components/schemas/MessageAttachment"
+    MessageList:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        nextCursor:
+          type: string
+          nullable: true
     ChatList:
       type: object
       required: [items, nextCursor]
@@ -89,95 +185,64 @@ components:
           enum: [queued]
     SendBody:
       type: object
+      required: [text]
       properties:
         text:
           type: string
           maxLength: 8192
-          description: Message text. Required unless `prompt` or `messages` supplies it.
-        prompt:
-          type: string
-          description: Completion alias for `text`.
-        messages:
-          type: array
-          description: OpenAI-style messages. The last user content is the turn text. Content may be a string or parts with `image_url`.
-          items:
-            type: object
-            properties:
-              role:
-                type: string
-              content:
-                oneOf:
-                  - type: string
-                  - type: array
-                    items:
-                      type: object
-                      properties:
-                        type:
-                          type: string
-                        text:
-                          type: string
-                        image_url:
-                          oneOf:
-                            - type: string
-                            - type: object
-                              properties:
-                                url:
-                                  type: string
-                                  format: uri
-        clientMessageId:
-          type: string
-          format: uuid
-        planMode:
-          type: boolean
+          description: The message to send.
         image_urls:
           type: array
-          description: Public http(s) image URLs to attach to this message. The agent can see them. You do not need to upload first.
+          description: Public http(s) image URLs to attach. Optional if you upload `file` or pass `attachmentIds`.
           items:
             type: string
             format: uri
           maxItems: 8
-        image_url:
-          type: string
-          format: uri
-          description: Single public image URL. Same as `image_urls` with one item.
         attachmentIds:
           type: array
-          description: IDs from `POST /uploads` or files already in the product. Optional if you upload `file` or pass `image_urls`.
+          description: IDs from `POST /uploads` or files already in the product.
           items:
             type: string
             format: uuid
+        planMode:
+          type: boolean
     MultipartSend:
       type: object
+      required: [text]
       properties:
         text:
           type: string
-        prompt:
-          type: string
-        chatId:
-          type: string
-          format: uuid
-          description: Only on `POST /completions`. Omit to create a chat.
-        planMode:
-          type: boolean
+          maxLength: 8192
+          description: The message to send.
         file:
           type: string
           format: binary
-          description: Image or video to attach. Repeat the field or use `files` for more than one. Max 20 MB each, 8 files.
+          description: Image or video to send with this message. Repeat the field or use `files` for more than one. Max 20 MB each, 8 files.
         files:
           type: array
           items:
             type: string
             format: binary
-        image:
-          type: string
-          format: binary
+        planMode:
+          type: boolean
+    MultipartCompletion:
+      allOf:
+        - $ref: "#/components/schemas/MultipartSend"
+        - type: object
+          properties:
+            chatId:
+              type: string
+              format: uuid
+              description: Existing chat. Omit to create one.
     UploadResult:
       type: object
-      required: [chatId, attachments]
+      required: [attachments]
       properties:
         chatId:
           type: string
           format: uuid
+          nullable: true
+          description: Set only when you passed `chatId`. Upload does not create a chat.
         attachments:
           type: array
           items:
@@ -434,43 +499,85 @@ paths:
             type: string
       responses:
         "200":
-          description: Messages, newest first, with content blocks and attachments
+          description: Messages, newest first. Each item includes `attachments` with `id` when the message has files.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+              examples:
+                withFile:
+                  summary: User message with an uploaded image
+                  value:
+                    items:
+                      - id: 55555555-5555-5555-5555-555555555555
+                        chatId: 11111111-1111-4111-8111-111111111111
+                        role: USER
+                        status: SUCCESS
+                        contentBlocks:
+                          - type: text
+                            text: What is in this photo?
+                        createdAt: "2026-09-23T12:00:00.000Z"
+                        errorCode: null
+                        errorMessage: null
+                        attachments:
+                          - id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+                            source: DIRECT_UPLOAD
+                            filename: photo.jpg
+                            mimeType: image/jpeg
+                            url: https://cdn.example.com/photo.jpg
+                            status: COMPLETE
+                            origin: UPLOAD
+                    nextCursor: null
+        "404":
+          description: Chat was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /completions:
     post:
       tags: [Messages]
-      summary: Send a message in an existing chat
-      description: Requires `chatId`. Attach images with `image_urls` (public URLs) or `attachmentIds`. To start a new chat in one call, use `POST /completions` instead.
-      operationId: sendMessage
-      parameters:
-        - $ref: "#/components/parameters/chatId"
+      summary: Send a message (creates a chat if needed)
+      description: |
+        One-call send. Omit `chatId` to create a chat and queue the turn.
+        Pass `chatId` to continue an existing chat.
+        Upload an image with multipart `text` + `file` in the same request,
+        or pass `image_urls` in JSON if the file is already hosted.
+      operationId: completion
       requestBody:
         required: true
         content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/MultipartCompletion"
+            examples:
+              withFile:
+                summary: Text plus an uploaded image
+                value:
+                  text: What is in this photo?
+                  file: (binary)
           application/json:
             schema:
-              $ref: "#/components/schemas/SendBody"
+              $ref: "#/components/schemas/CompletionBody"
             examples:
-              textOnly:
-                summary: Text only
-                value:
-                  text: Summarize what this agent can do
-              withImage:
+              newChat:
                 summary: Text plus an image URL
                 value:
                   text: What is in this photo?
                   image_urls:
                     - https://cdn.example.com/photo.jpg
-          multipart/form-data:
-            schema:
-              $ref: "#/components/schemas/MultipartSend"
+              existingChat:
+                summary: Send into an existing chat
+                value:
+                  chatId: 11111111-1111-4111-8111-111111111111
+                  text: Continue from here
+              textOnly:
+                summary: Text only, new chat
+                value:
+                  text: Summarize what this agent can do
       responses:
-        "201":
+        "202":
           description: Turn queued
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QueuedTurn"
-        "200":
-          description: Replay of the same clientMessageId
           content:
             application/json:
               schema:
@@ -487,98 +594,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /chats/{chatId}/completions:
-    post:
-      tags: [Messages]
-      summary: Chat-style completion in an existing chat
-      operationId: chatCompletion
-      description: Same as send on an existing chat. JSON (`image_urls` / `attachmentIds`) or multipart (`file`).
-      parameters:
-        - $ref: "#/components/parameters/chatId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SendBody"
-            examples:
-              withImage:
-                summary: Text plus an image URL
-                value:
-                  text: Crop the subject
-                  image_urls:
-                    - https://cdn.example.com/photo.jpg
-          multipart/form-data:
-            schema:
-              $ref: "#/components/schemas/MultipartSend"
-      responses:
-        "202":
-          description: Turn queued
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QueuedTurn"
-        "200":
-          description: Idempotent replay
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QueuedTurn"
-  /completions:
-    post:
-      tags: [Messages]
-      summary: Send a message (creates a chat if needed)
-      description: |
-        One-call send. Omit `chatId` to create a chat and queue the turn.
-        Pass `chatId` to continue an existing chat.
-        Attach a file with multipart `file`, or pass `image_urls` / `attachmentIds` in JSON.
-      operationId: completion
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CompletionBody"
-            examples:
-              newChat:
-                summary: Send without creating a chat first
-                value:
-                  text: What is in this photo?
-                  image_urls:
-                    - https://cdn.example.com/photo.jpg
-              existingChat:
-                summary: Send into an existing chat
-                value:
-                  chatId: 11111111-1111-4111-8111-111111111111
-                  text: Continue from here
-              textOnly:
-                summary: Text only, new chat
-                value:
-                  text: Summarize what this agent can do
-          multipart/form-data:
-            schema:
-              $ref: "#/components/schemas/MultipartSend"
-            examples:
-              upload:
-                summary: Send a file without a URL
-                value:
-                  text: What is in this photo?
-                  file: (binary)
-      responses:
-        "202":
-          description: Turn queued
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QueuedTurn"
   /uploads:
     post:
       tags: [Messages]
       summary: Upload a file
       description: |
-        Multipart upload. Creates a chat when `chatId` is omitted.
-        Use the returned attachment `id` in `attachmentIds` on send, or send
-        the file in the same request on `/completions`.
+        Multipart upload. Stores the file and returns an attachment id.
+        Pass `chatId` only to attach it to an existing chat. Omitting `chatId`
+        does not create a chat — use `attachmentIds` on send, or upload in
+        the same request on `/completions`.
         Images, video, and audio. 20 MB per file, 8 files.
       operationId: uploadFiles
       requestBody:

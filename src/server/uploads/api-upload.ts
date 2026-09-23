@@ -3,7 +3,6 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { HttpError } from "@/server/http/errors";
 import { requireOwnedChat } from "@/server/chat/owned";
-import { createChat } from "@/server/chat/chats";
 import { s3ConfigFromEnv, createS3ObjectStore } from "@/server/storage/s3";
 import {
   ALLOWED_UPLOAD_MIME,
@@ -83,7 +82,7 @@ export async function persistApiUploadFiles(input: {
   files: IncomingUpload[];
   db?: PrismaClient;
   env?: Record<string, string | undefined>;
-}): Promise<{ chatId: string; attachments: UploadedAttachment[] }> {
+}): Promise<{ chatId: string | null; attachments: UploadedAttachment[] }> {
   if (input.files.length === 0) {
     throw new HttpError("Attach at least one file", 400, "INVALID_REQUEST");
   }
@@ -124,7 +123,7 @@ export async function persistApiUploadFiles(input: {
   const db = input.db ?? prisma;
   const chatId = input.chatId
     ? (await requireOwnedChat(input.userId, input.chatId, db), input.chatId)
-    : (await createChat({ userId: input.userId, body: {}, db })).id;
+    : null;
 
   if (s3) {
     return {
@@ -153,7 +152,7 @@ export async function persistApiUploadFiles(input: {
 
 async function persistToS3(input: {
   userId: string;
-  chatId: string;
+  chatId: string | null;
   files: IncomingUpload[];
   db: PrismaClient;
   config: NonNullable<ReturnType<typeof s3ConfigFromEnv>>;
@@ -163,7 +162,7 @@ async function persistToS3(input: {
   for (const file of input.files) {
     const filename = safeFilename(file.filename);
     const stored = await store.put({
-      key: `uploads/${input.userId}/${input.chatId}/${randomUUID()}/${filename}`,
+      key: `uploads/${input.userId}/${input.chatId ?? "library"}/${randomUUID()}/${filename}`,
       body: file.bytes,
       contentType: file.mimeType,
     });
@@ -194,7 +193,7 @@ async function persistToS3(input: {
 
 async function persistToTransloadit(input: {
   userId: string;
-  chatId: string;
+  chatId: string | null;
   files: IncomingUpload[];
   db: PrismaClient;
   env: Record<string, string | undefined>;
@@ -203,7 +202,7 @@ async function persistToTransloadit(input: {
   const signed = signAssemblyParams({
     key: creds.key,
     secret: creds.secret,
-    chatId: input.chatId,
+    chatId: input.chatId ?? undefined,
     userId: input.userId,
     notifyUrl: creds.notifyUrl,
   });
@@ -224,7 +223,7 @@ async function persistToTransloadit(input: {
   }
   const persisted = await persistAssembly({
     userId: input.userId,
-    chatId: input.chatId,
+    chatId: input.chatId ?? undefined,
     assembly,
     db: input.db,
   });

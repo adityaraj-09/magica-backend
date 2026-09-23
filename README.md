@@ -82,8 +82,7 @@ Bearer API keys (`POST /api/keys`, `Authorization: Bearer gxk_live_…`). Clerk 
 | --- | --- | --- |
 | GET/POST | `/api/v1/chats` | List / create |
 | GET/DELETE | `/api/v1/chats/:chatId` | Read / soft-delete |
-| GET/POST | `/api/v1/chats/:chatId/messages` | History / send |
-| POST | `/api/v1/chats/:chatId/completions` | Chat-style admit (`text` / `prompt` / `messages`) |
+| GET | `/api/v1/chats/:chatId/messages` | History |
 | POST | `/api/v1/completions` | Creates a chat when `chatId` is omitted. JSON or multipart `file` |
 | POST | `/api/v1/uploads` | Multipart file upload. Returns `attachmentIds` |
 | GET | `/api/v1/chats/:chatId/runs/:runId` | Poll run status |

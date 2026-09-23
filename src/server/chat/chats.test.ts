@@ -170,6 +170,85 @@ describe("chats", () => {
       }),
     );
     expect(result.items[0]?.contentBlocks).toEqual([{ type: "text", text: "hi" }]);
+    expect(result.items[0]?.attachments).toEqual([]);
+  });
+
+  it("returns linked attachments and generated run assets with ids", async () => {
+    const findUnique = vi.fn(async () => chatRow());
+    const findMany = vi.fn(async () => [
+      {
+        id: "55555555-5555-5555-5555-555555555555",
+        chatId: ids.chatId,
+        agentRunId: "77777777-7777-7777-7777-777777777777",
+        role: "ASSISTANT",
+        status: "SUCCESS",
+        contentBlocks: [{ type: "text", text: "here" }],
+        createdAt,
+        errorCode: null,
+        errorMessage: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        agentRun: null,
+        attachments: [
+          {
+            source: "DIRECT_UPLOAD",
+            attachment: {
+              id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+              filename: "shot.png",
+              mimeType: "image/png",
+              byteSize: 12,
+              url: "https://cdn.example/shot.png",
+              thumbnailUrl: null,
+              status: "COMPLETE",
+              origin: "UPLOAD",
+              width: 800,
+              height: 600,
+              durationMs: null,
+              expiresAt: null,
+            },
+          },
+        ],
+      },
+    ]);
+    const attachmentFindMany = vi.fn(async () => [
+      {
+        id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        filename: "out.png",
+        mimeType: "image/png",
+        byteSize: 40,
+        url: "https://cdn.example/out.png",
+        thumbnailUrl: null,
+        status: "COMPLETE",
+        origin: "GENERATED",
+        width: 1024,
+        height: 1024,
+        durationMs: null,
+        expiresAt: null,
+        toolInvocation: { agentRunId: "77777777-7777-7777-7777-777777777777" },
+      },
+    ]);
+    const result = await listMessages({
+      userId: ids.userId,
+      chatId: ids.chatId,
+      query: {},
+      db: {
+        chat: { findUnique },
+        message: { findMany },
+        attachment: { findMany: attachmentFindMany },
+      } as never,
+    });
+    expect(result.items[0]?.attachments).toEqual([
+      expect.objectContaining({
+        id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        filename: "shot.png",
+        source: "DIRECT_UPLOAD",
+      }),
+      expect.objectContaining({
+        id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        filename: "out.png",
+        source: "GENERATED",
+      }),
+    ]);
   });
 
   it("includes token and credit usage on assistant messages", async () => {

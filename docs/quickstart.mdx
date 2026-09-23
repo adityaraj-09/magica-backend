@@ -56,7 +56,7 @@ export BASE=https://magica-backend-oda9.onrender.com
 
 <CardGroup cols={2}>
   <Card title="Send into an existing chat" icon="messages" href="/messages">
-    `POST /chats/{chatId}/messages` with `text` and `image_urls` or `attachmentIds`.
+    `POST /completions` with `chatId`, `text`, and `file` in one multipart request.
   </Card>
   <Card title="Call a Magica tool" icon="image" href="/magica">
     Crop, generate, or merge without waiting on the agent loop.

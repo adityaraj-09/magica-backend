@@ -20,7 +20,7 @@ export async function admitPublicSend(input: {
       chatId,
       files,
     });
-    chatId = uploaded.chatId;
+    chatId = uploaded.chatId ?? chatId;
     uploadedIds = uploaded.attachments.filter((row) => row.status === "COMPLETE").map((row) => row.id);
   }
   chatId ??= (await createChat({ userId: input.user.id, body: {} })).id;

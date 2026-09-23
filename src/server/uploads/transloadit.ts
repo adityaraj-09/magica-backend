@@ -64,7 +64,7 @@ export function transloaditCredentials(
 export function signAssemblyParams(input: {
   key: string;
   secret: string;
-  chatId: string;
+  chatId?: string;
   userId: string;
   expiresAt?: Date;
   notifyUrl?: string;
@@ -79,8 +79,8 @@ export function signAssemblyParams(input: {
       nonce: input.nonce ?? randomUUID(),
     },
     fields: {
-      chatId: input.chatId,
       userId: input.userId,
+      ...(input.chatId ? { chatId: input.chatId } : {}),
     },
     steps: {
       ":original": {
@@ -170,12 +170,12 @@ const assemblyFileSchema = z.object({
 
 export async function persistAssembly(input: {
   userId: string;
-  chatId: string;
+  chatId?: string;
   assembly: unknown;
   db?: PrismaClient;
 }): Promise<{ attachments: Array<{ id: string; status: string; filename: string }> }> {
   const db = input.db ?? prisma;
-  await requireOwnedChat(input.userId, input.chatId, db);
+  if (input.chatId) await requireOwnedChat(input.userId, input.chatId, db);
   const files = filesFromAssembly(input.assembly);
   const assemblyId = assemblyIdOf(input.assembly);
   if (!assemblyId) {
@@ -212,7 +212,7 @@ export async function persistSignedWebhook(input: {
     throw new HttpError("Invalid Transloadit payload", 400, "INVALID_REQUEST");
   }
   const fields = fieldsOf(assembly);
-  if (!fields.userId || !fields.chatId) {
+  if (!fields.userId) {
     throw new HttpError("Assembly is missing ownership fields", 400, "INVALID_REQUEST");
   }
   return persistAssembly({
@@ -268,7 +268,7 @@ async function upsertUpload(
   db: PrismaClient,
   input: {
     userId: string;
-    chatId: string;
+    chatId?: string;
     assemblyId: string;
     file: z.infer<typeof assemblyFileSchema>;
   },

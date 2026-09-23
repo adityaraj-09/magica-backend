@@ -38,6 +38,16 @@ describe("signAssemblyParams", () => {
     expect(signed.limits.maxFileBytes).toBe(COMMUNITY_MAX_FILE_BYTES);
   });
 
+  it("omits chatId when the upload is not tied to a chat", () => {
+    const signed = signAssemblyParams({
+      key: "auth_key",
+      secret: "auth_secret",
+      userId: ids.userId,
+      nonce: "nonce-2",
+    });
+    expect(JSON.parse(signed.params).fields).toEqual({ userId: ids.userId });
+  });
+
   it("refuses to sign another user's chat", async () => {
     await expect(
       signChatUpload({
@@ -104,6 +114,36 @@ describe("persistAssembly", () => {
       status: "FAILED",
       errorCode: "FILE_TOO_LARGE",
     });
+  });
+
+  it("stores a file without a chat", async () => {
+    const upsert = vi.fn().mockResolvedValue({ id: "att_ok", status: "COMPLETE", filename: "shot.png" });
+    const db = {
+      chat: { findUnique: vi.fn() },
+      attachment: { upsert },
+    };
+    await persistAssembly({
+      userId: ids.userId,
+      db: db as never,
+      assembly: {
+        assembly_id: "assembly_2",
+        uploads: [
+          {
+            id: "file_ok",
+            name: "shot.png",
+            mime: "image/png",
+            size: 1200,
+            ssl_url: "https://tmp.example/shot.png",
+          },
+        ],
+      },
+    });
+    expect(db.chat.findUnique).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ userId: ids.userId, chatId: undefined }),
+      }),
+    );
   });
 });
 

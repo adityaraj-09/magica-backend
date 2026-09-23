@@ -9,20 +9,26 @@ You can **upload and send in one request**, or **upload first** and pass `attach
 
 ## Upload and send
 
-`POST /api/v1/completions` as `multipart/form-data`. Omit `chatId` to create a chat.
+`POST /api/v1/completions` accepts `text` + `file` in one `multipart/form-data` request. Omit `chatId` for a new chat, or pass it to continue one.
 
 ```bash
+# New chat
 curl -X POST "$BASE/api/v1/completions" \
   -H "Authorization: Bearer $GALAXY_API_KEY" \
   -F "text=What is in this photo?" \
   -F "file=@./photo.jpg;type=image/jpeg"
-```
 
-The same `file` field works on `POST /api/v1/chats/{chatId}/messages`.
+# Existing chat
+curl -X POST "$BASE/api/v1/completions" \
+  -H "Authorization: Bearer $GALAXY_API_KEY" \
+  -F "chatId=$CHAT_ID" \
+  -F "text=What is in this photo?" \
+  -F "file=@./photo.jpg;type=image/jpeg"
+```
 
 ## Upload only
 
-`POST /api/v1/uploads` stores the file and returns an attachment id.
+`POST /api/v1/uploads` stores the file and returns an attachment id. It does **not** create a chat. Pass `chatId` only if you want the file attached to an existing chat.
 
 ```bash
 curl -X POST "$BASE/api/v1/uploads" \
@@ -32,7 +38,7 @@ curl -X POST "$BASE/api/v1/uploads" \
 
 ```json
 {
-  "chatId": "…",
+  "chatId": null,
   "attachments": [
     {
       "id": "…",

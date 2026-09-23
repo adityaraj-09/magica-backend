@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { persist, admit } = vi.hoisted(() => ({
   persist: vi.fn(),
@@ -33,6 +33,11 @@ const user = {
 } satisfies User;
 
 describe("admitPublicSend", () => {
+  afterEach(() => {
+    persist.mockReset();
+    admit.mockReset();
+  });
+
   it("uploads multipart files then admits with those attachment ids", async () => {
     persist.mockResolvedValue({
       chatId: "11111111-1111-1111-1111-111111111111",
@@ -72,5 +77,39 @@ describe("admitPublicSend", () => {
       }),
     );
     expect(result.runId).toBe("cccccccc-cccc-cccc-cccc-cccccccccccc");
+  });
+
+  it("uploads a file onto an existing chat in the same send", async () => {
+    const chatId = "11111111-1111-1111-1111-111111111111";
+    persist.mockResolvedValue({
+      chatId,
+      attachments: [{ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", status: "COMPLETE" }],
+    });
+    admit.mockResolvedValue({
+      chatId,
+      messageId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      runId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      triggerRunId: "run_1",
+      realtimeToken: "pat",
+      replayed: false,
+    });
+    const form = new FormData();
+    form.set("text", "crop this");
+    form.append("file", new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" }));
+    const request = new Request("http://localhost/api/v1/chats/" + chatId + "/messages", {
+      method: "POST",
+      body: form,
+    });
+    await admitPublicSend({ user, request, chatId });
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ userId, chatId }));
+    expect(admit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId,
+        body: expect.objectContaining({
+          text: "crop this",
+          attachmentIds: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"],
+        }),
+      }),
+    );
   });
 });

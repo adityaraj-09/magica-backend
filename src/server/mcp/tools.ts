@@ -69,11 +69,9 @@ export const MCP_TOOLS: McpTool[] = [
       {
         chatId,
         text: { type: "string", maxLength: 8192 },
-        planMode: { type: "boolean" },
-        clientMessageId: uuid,
-        attachmentIds: { type: "array", items: uuid },
         image_urls: { type: "array", items: { type: "string" }, description: "Public http(s) image URLs to attach." },
-        image_url: { type: "string", description: "Single public image URL." },
+        attachmentIds: { type: "array", items: uuid },
+        planMode: { type: "boolean" },
       },
       ["chatId", "text"],
     ),
@@ -81,23 +79,13 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "complete",
     description:
-      "Send a message. Omit chatId to create a chat, or pass chatId to continue one. text, prompt, or the last user message is the turn. Attach images with image_urls or attachmentIds.",
+      "Send a message. Omit chatId to create a chat, or pass chatId to continue one. Uses text plus optional image_urls or attachmentIds.",
     inputSchema: object({
       chatId: { ...uuid, description: "Existing chat. Omitted creates one." },
       text: { type: "string", maxLength: 8192 },
-      prompt: { type: "string", maxLength: 8192 },
-      planMode: { type: "boolean" },
-      clientMessageId: uuid,
-      attachmentIds: { type: "array", items: uuid },
       image_urls: { type: "array", items: { type: "string" }, description: "Public http(s) image URLs to attach." },
-      image_url: { type: "string", description: "Single public image URL." },
-      messages: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { role: { type: "string" }, content: { type: "string" } },
-        },
-      },
+      attachmentIds: { type: "array", items: uuid },
+      planMode: { type: "boolean" },
     }),
   },
   {

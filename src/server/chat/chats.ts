@@ -194,6 +194,21 @@ export async function deleteChat(input: {
   });
 }
 
+const attachmentJsonSelect = {
+  id: true,
+  filename: true,
+  mimeType: true,
+  byteSize: true,
+  url: true,
+  thumbnailUrl: true,
+  status: true,
+  origin: true,
+  width: true,
+  height: true,
+  durationMs: true,
+  expiresAt: true,
+} as const;
+
 export async function listMessages(input: {
   userId: string;
   chatId: string;
@@ -228,20 +243,7 @@ export async function listMessages(input: {
         select: {
           source: true,
           attachment: {
-            select: {
-              id: true,
-              filename: true,
-              mimeType: true,
-              byteSize: true,
-              url: true,
-              thumbnailUrl: true,
-              status: true,
-              origin: true,
-              width: true,
-              height: true,
-              durationMs: true,
-              expiresAt: true,
-            },
+            select: attachmentJsonSelect,
           },
         },
       },
@@ -251,10 +253,52 @@ export async function listMessages(input: {
   const hasMore = rows.length > query.limit;
   const items = hasMore ? rows.slice(0, query.limit) : rows;
   const last = items.at(-1);
+  const generated = await generatedAttachmentsByRun(
+    db,
+    items.flatMap((row) => (row.agentRunId ? [row.agentRunId] : [])),
+  );
   return {
-    items: items.map(toMessageJson),
+    items: items.map((row) => {
+      const message = toMessageJson(row);
+      const extras = row.agentRunId ? (generated.get(row.agentRunId) ?? []) : [];
+      if (!extras.length) return message;
+      const seen = new Set(message.attachments.map((file) => file.id));
+      return {
+        ...message,
+        attachments: [...message.attachments, ...extras.filter((file) => !seen.has(file.id))],
+      };
+    }),
     nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
   };
+}
+
+async function generatedAttachmentsByRun(
+  db: PrismaClient,
+  runIds: string[],
+): Promise<Map<string, MessageJson["attachments"]>> {
+  const ids = [...new Set(runIds)];
+  const byRun = new Map<string, MessageJson["attachments"]>();
+  if (!ids.length) return byRun;
+  const rows = await db.attachment.findMany({
+    where: {
+      origin: "GENERATED",
+      status: "COMPLETE",
+      toolInvocation: { agentRunId: { in: ids } },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      ...attachmentJsonSelect,
+      toolInvocation: { select: { agentRunId: true } },
+    },
+  });
+  for (const row of rows) {
+    const runId = row.toolInvocation?.agentRunId;
+    if (!runId) continue;
+    const list = byRun.get(runId) ?? [];
+    list.push(toAttachmentJson(row, "GENERATED"));
+    byRun.set(runId, list);
+  }
+  return byRun;
 }
 
 export type MessageUsage = {
@@ -338,21 +382,41 @@ function toMessageJson(row: {
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
     usage: messageUsage(row),
-    attachments: row.attachments.map((link) => ({
-      id: link.attachment.id,
-      source: link.source,
-      filename: link.attachment.filename,
-      mimeType: link.attachment.mimeType,
-      byteSize: link.attachment.byteSize,
-      url: link.attachment.url,
-      thumbnailUrl: link.attachment.thumbnailUrl,
-      status: link.attachment.status,
-      origin: link.attachment.origin,
-      width: link.attachment.width,
-      height: link.attachment.height,
-      durationMs: link.attachment.durationMs,
-      expiresAt: link.attachment.expiresAt?.toISOString() ?? null,
-    })),
+    attachments: row.attachments.map((link) => toAttachmentJson(link.attachment, link.source)),
+  };
+}
+
+function toAttachmentJson(
+  row: {
+    id: string;
+    filename: string;
+    mimeType: string;
+    byteSize: number;
+    url: string | null;
+    thumbnailUrl: string | null;
+    status: string;
+    origin: string;
+    width: number | null;
+    height: number | null;
+    durationMs: number | null;
+    expiresAt: Date | null;
+  },
+  source: string,
+): MessageJson["attachments"][number] {
+  return {
+    id: row.id,
+    source,
+    filename: row.filename,
+    mimeType: row.mimeType,
+    byteSize: row.byteSize,
+    url: row.url,
+    thumbnailUrl: row.thumbnailUrl,
+    status: row.status,
+    origin: row.origin,
+    width: row.width,
+    height: row.height,
+    durationMs: row.durationMs,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
   };
 }
 
