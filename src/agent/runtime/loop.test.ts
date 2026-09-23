@@ -445,6 +445,15 @@ describe("runAgentLoop", () => {
     expect(deps.realtime?.appendText).toHaveBeenCalledWith("Hel");
     expect(deps.realtime?.appendText).toHaveBeenCalledWith("lo");
     expect(deps.realtime?.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assistant: expect.objectContaining({
+          contentBlocks: expect.arrayContaining([
+            expect.objectContaining({ type: "text", text: expect.stringMatching(/Hel/) }),
+          ]),
+        }),
+      }),
+    );
+    expect(deps.realtime?.publish).toHaveBeenCalledWith(
       expect.objectContaining({ status: "THINKING", runId: ids.runId }),
     );
     expect(deps.realtime?.publish).toHaveBeenCalledWith(

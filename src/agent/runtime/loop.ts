@@ -120,7 +120,23 @@ export async function runAgentLoop(
       });
 
       const llmMessages = buildMessages(deps, priorMessages, blocks, project);
-      const completion = await completeWithRetry(deps, llmMessages);
+      const sink = createTokenSink({
+        assistantId: assistant.id,
+        priorBlocks: blocks,
+        live,
+        realtime,
+        thinkingStartedAt,
+        persist: (next) =>
+          deps.store.saveAssistant({
+            messageId: assistant.id,
+            blocks: next,
+            promptTokens,
+            completionTokens,
+            status: "STREAMING",
+          }),
+      });
+      const completion = await completeWithRetry(deps, llmMessages, sink);
+      await sink.flush();
       promptTokens += completion.usage.promptTokens;
       completionTokens += completion.usage.completionTokens;
       modelRouted = completion.modelRouted;
@@ -336,17 +352,20 @@ function buildMessages(
   ];
 }
 
-async function completeWithRetry(deps: AgentLoopDeps, messages: LlmMessage[]) {
+async function completeWithRetry(
+  deps: AgentLoopDeps,
+  messages: LlmMessage[],
+  sink?: TokenSink,
+) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    sink?.reset();
     try {
       return await deps.llm.complete({
         messages,
         tools: deps.registry.listForAgent(),
         signal: deps.signal,
-        onToken: (text) => {
-          void (deps.realtime ?? noopRealtime).appendText(text);
-        },
+        onToken: sink ? (token) => sink.push(token) : undefined,
       });
     } catch (error) {
       lastError = error;
@@ -1016,6 +1035,68 @@ function createLiveMetadata(run: RunSnapshot, assistantMessageId: string): RunMe
     },
     errorCode: null,
     errorMessage: null,
+  };
+}
+
+const STREAM_META_MS = 40;
+const STREAM_PERSIST_MS = 250;
+
+type TokenSink = {
+  push(token: string): void;
+  reset(): void;
+  flush(): Promise<void>;
+};
+
+function createTokenSink(input: {
+  assistantId: string;
+  priorBlocks: ContentBlock[];
+  live: RunMetadata;
+  realtime: RealtimePublisher;
+  thinkingStartedAt: Date;
+  persist: (blocks: ContentBlock[]) => Promise<void>;
+}): TokenSink {
+  let streamed = "";
+  let lastMeta = 0;
+  let lastPersist = 0;
+  let persistTail = Promise.resolve();
+
+  const blocksFor = (text: string) =>
+    text ? appendBlocks(input.priorBlocks, { type: "text", text }) : [...input.priorBlocks];
+
+  const publish = (text: string) => {
+    input.live.assistant = {
+      id: input.assistantId,
+      status: "STREAMING",
+      contentBlocks: blocksFor(text),
+    };
+    publishLive(input.realtime, input.live, input.thinkingStartedAt, {});
+  };
+
+  return {
+    push(token: string) {
+      if (!token) return;
+      streamed += token;
+      void input.realtime.appendText(token);
+      const now = Date.now();
+      if (lastMeta === 0 || now - lastMeta >= STREAM_META_MS) {
+        lastMeta = now;
+        publish(streamed);
+      }
+      if (now - lastPersist >= STREAM_PERSIST_MS) {
+        lastPersist = now;
+        const snapshot = streamed;
+        persistTail = persistTail.then(() => input.persist(blocksFor(snapshot)));
+      }
+    },
+    reset() {
+      streamed = "";
+      lastMeta = 0;
+      lastPersist = 0;
+    },
+    async flush() {
+      if (streamed) publish(streamed);
+      await persistTail;
+    },
   };
 }
 
