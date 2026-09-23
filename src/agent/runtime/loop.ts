@@ -18,7 +18,7 @@ import {
 } from "./realtime";
 import { AgentStore, stableJson, type RunSnapshot } from "./store";
 import { buildSystemPrompt } from "./system-prompt";
-import { shouldSuggestTitle, suggestTaskTitle, userTextFromHistory } from "./task-title";
+import { shouldSuggestTitle, suggestTaskTitle, userHasImage, userTextFromHistory } from "./task-title";
 import type { WaitpointApproval, WaitpointGateway, WaitpointKind } from "./waitpoint";
 import { noopCredits, type CreditGateway } from "@/server/credits/settle";
 import { noopAssets, type AssetGateway } from "@/server/storage/copy";
@@ -78,8 +78,9 @@ export async function runAgentLoop(
     history.filter((message) => message.role !== "ASSISTANT" || message.status !== "STREAMING"),
   );
   const userText = userTextFromHistory(history);
+  const hasImage = userHasImage(history);
   const project = await deps.store.getChatProject(run.chatId);
-  await nameChatFromUserText(deps, run.chatId, userText);
+  await nameChatFromUserText(deps, run.chatId, userText, hasImage);
   let promptTokens = 0;
   let completionTokens = 0;
   let modelRouted: string | undefined;
@@ -312,12 +313,13 @@ async function nameChatFromUserText(
   deps: AgentLoopDeps,
   chatId: string,
   userText: string,
+  hasImage: boolean,
 ): Promise<void> {
-  if (!userText) return;
+  if (!userText && !hasImage) return;
   try {
     const current = await deps.store.getChatTitle(chatId);
     if (current == null || !shouldSuggestTitle(current, userText)) return;
-    const title = await suggestTaskTitle(deps.llm, userText, deps.signal);
+    const title = await suggestTaskTitle(deps.llm, userText, deps.signal, hasImage);
     if (!title) return;
     await deps.store.renameChat(chatId, title);
   } catch {
