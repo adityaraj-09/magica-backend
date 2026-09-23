@@ -36,7 +36,7 @@ export const listChatsQuerySchema = paginationQuerySchema.extend({
   projectId: z.string().uuid().optional(),
 });
 
-const chatSelect = {
+export const chatSelect = {
   id: true,
   userId: true,
   projectId: true,
