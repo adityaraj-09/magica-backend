@@ -84,7 +84,8 @@ describe("MagicaApiAdapter", () => {
   });
 
   it("completes gpt_image_2 text generation", async () => {
-    vi.stubGlobal("fetch", magicaCompleteFetch("https://cdn.magica.test/gen.png"));
+    const fetchMock = magicaCompleteFetch("https://cdn.magica.test/gen.png");
+    vi.stubGlobal("fetch", fetchMock);
     const result = await adapter().gptImage2(
       gptImage2InputSchema.parse({ prompt: "a red square on white" }),
       ctx(),
@@ -93,6 +94,55 @@ describe("MagicaApiAdapter", () => {
       image_url: "https://cdn.magica.test/gen.png",
       mode: "gpt-image-2-text",
     });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/schema"))).toBe(false);
+  });
+
+  it("finishes gpt_image_2 when Magica reports COMPLETE or already has an image", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.includes("/run")) {
+        return json(200, { id: "magica_ok", status: "QUEUED" });
+      }
+      return json(200, {
+        data: {
+          id: "magica_ok",
+          status: "COMPLETE",
+          output: { images: ["https://cdn.magica.test/gen.png"] },
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await adapter().gptImage2(
+      gptImage2InputSchema.parse({ prompt: "a red square" }),
+      ctx(),
+    );
+    expect(result.output.image_url).toBe("https://cdn.magica.test/gen.png");
+  });
+
+  it("keeps polling after a transient 500 instead of restarting the Magica run", async () => {
+    let polls = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.includes("/run")) {
+        return json(202, { runId: "magica_ok" });
+      }
+      polls += 1;
+      if (polls === 1) return json(500, { message: "upstream blip" });
+      return json(200, {
+        id: "magica_ok",
+        status: "RUNNING",
+        output: { image_url: "https://cdn.magica.test/gen.png" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await adapter().gptImage2(
+      gptImage2InputSchema.parse({ prompt: "a red square" }),
+      ctx(),
+    );
+    expect(result.output.image_url).toBe("https://cdn.magica.test/gen.png");
+    expect(fetchMock.mock.calls.filter(([url, init]) => (init?.method ?? "GET") === "POST")).toHaveLength(1);
   });
 
   it("completes merge_videos", async () => {

@@ -67,6 +67,15 @@ export const runMetadataSchema = z.object({
   assistant: liveAssistantSchema.nullable().optional(),
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  usage: z
+    .object({
+      promptTokens: z.number().int().nonnegative(),
+      completionTokens: z.number().int().nonnegative(),
+      credits: z.string(),
+      model: z.string().nullable().optional(),
+      durationMs: z.number().int().nonnegative().nullable().optional(),
+    })
+    .optional(),
 });
 
 export type ToolLive = z.infer<typeof toolLiveSchema>;

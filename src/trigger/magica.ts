@@ -26,9 +26,9 @@ export const executeMagicaTool = schemaTask({
   queue: magicaQueue,
   maxDuration: 540,
   retry: {
-    maxAttempts: 3,
+    maxAttempts: 2,
     minTimeoutInMs: 2000,
-    maxTimeoutInMs: 20_000,
+    maxTimeoutInMs: 10_000,
     factor: 2,
     randomize: true,
   },

@@ -30,7 +30,10 @@ const DEFAULT_POLL_TIMEOUT_MS = 8 * 60_000;
 const SCHEMA_TTL_MS = 10 * 60_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const MICROCREDITS_PER_CREDIT = 1_000_000;
-const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELED", "CANCELLED"]);
+const SUCCEEDED = new Set(["COMPLETED", "COMPLETE", "SUCCESS", "SUCCEEDED", "DONE", "FINISHED"]);
+const FAILED = new Set(["FAILED", "ERROR", "ERRORED"]);
+const CANCELLED = new Set(["CANCELED", "CANCELLED"]);
+const MAX_POLL_GAPS = 8;
 
 type MagicaField = {
   name: string;
@@ -97,10 +100,9 @@ export class MagicaApiAdapter implements MagicaAdapter {
     ctx: ToolExecutionContext,
   ): Promise<ToolExecutionResult<GptImage2Output>> {
     const input = gptImage2InputSchema.parse(raw);
-    const subModelId = input.mode;
-    const schema = await this.getSchema(subModelId, ctx.signal, "gpt_image_2");
-    const payload = buildGptImagePayload(input, schema.fields ?? []);
-    const run = await this.startAndWait("gpt_image_2", payload, subModelId, ctx);
+    // Schema for gpt-image-2-text/edit 403s on Magica; the node only needs prompt + optional image.
+    const payload = buildGptImagePayload(input, []);
+    const run = await this.startAndWait("gpt_image_2", payload, input.mode, ctx);
     const imageUrl = extractMediaUrl(run.output, ["image_url", "images", "image", "url"]);
     if (!imageUrl) {
       throw new ToolError("FAILED", "GPT Image 2 finished without an image URL");
@@ -157,8 +159,13 @@ export class MagicaApiAdapter implements MagicaAdapter {
   ): Promise<MagicaRun> {
     throwIfAborted(ctx.signal, "Magica run cancelled");
     const started = Date.now();
-    const runId = await this.startRun(nodeType, input, subModelId, ctx.signal);
-    return this.waitForRun(runId, ctx.signal, started);
+    const startedRun = await this.startRun(nodeType, input, subModelId, ctx.signal);
+    if (runOutcome(startedRun, nodeType) === "succeeded") return startedRun;
+    const runId = startedRun.runId ?? startedRun.id;
+    if (!runId) {
+      throw new ToolError("FAILED", "Magica did not return a runId");
+    }
+    return this.waitForRun(runId, nodeType, ctx.signal, started);
   }
 
   private async startRun(
@@ -166,54 +173,64 @@ export class MagicaApiAdapter implements MagicaAdapter {
     input: Record<string, unknown>,
     subModelId: string | undefined,
     signal: AbortSignal,
-  ): Promise<string> {
+  ): Promise<MagicaRun> {
     const body: Record<string, unknown> = { input };
     if (subModelId) body.subModelId = subModelId;
 
     const response = await this.request(
       "POST",
       `/v1/nodes/${encodeURIComponent(nodeType)}/run`,
-      { body, signal, expected: [202] },
+      { body, signal, expected: [200, 202] },
     );
-    const json = (await response.json()) as { runId?: string };
-    if (!json.runId) {
+    const run = parseMagicaRun(await response.json());
+    if (!run || !(run.runId || run.id)) {
       throw new ToolError("FAILED", "Magica did not return a runId");
     }
-    return json.runId;
+    return run;
   }
 
   private async waitForRun(
     runId: string,
+    nodeType: string,
     signal: AbortSignal,
     startedAt: number,
   ): Promise<MagicaRun> {
-    let missing = 0;
+    let gaps = 0;
     while (Date.now() - startedAt < this.pollTimeoutMs) {
       throwIfAborted(signal, "Magica run cancelled");
-      const run = await this.getRun(runId, signal);
+      let run: MagicaRun | null = null;
+      try {
+        run = await this.getRun(runId, signal);
+      } catch (error) {
+        if (error instanceof ToolError && error.retryable) {
+          gaps += 1;
+          if (gaps > MAX_POLL_GAPS) throw error;
+          await sleep(this.pollIntervalMs, signal);
+          continue;
+        }
+        throw error;
+      }
+
       if (!run) {
-        missing += 1;
-        if (missing > 5) {
+        gaps += 1;
+        if (gaps > MAX_POLL_GAPS) {
           throw new ToolError("FAILED", "Magica run could not be loaded");
         }
         await sleep(this.pollIntervalMs, signal);
         continue;
       }
 
-      const status = run.status.toUpperCase();
-      if (status === "COMPLETED") return run;
-      if (status === "FAILED") {
+      gaps = 0;
+      const outcome = runOutcome(run, nodeType);
+      if (outcome === "succeeded") return run;
+      if (outcome === "failed") {
         throw new ToolError(
           "FAILED",
           run.userMessage ?? safeErrorDetail({ message: run.error }) ?? "Magica run failed",
         );
       }
-      if (status === "CANCELED" || status === "CANCELLED") {
+      if (outcome === "cancelled") {
         throw new ToolError("CANCELLED", "Magica run was cancelled");
-      }
-      if (!TERMINAL.has(status)) {
-        await sleep(this.pollIntervalMs, signal);
-        continue;
       }
       await sleep(this.pollIntervalMs, signal);
     }
@@ -226,7 +243,7 @@ export class MagicaApiAdapter implements MagicaAdapter {
       expected: [200, 404],
     });
     if (response.status === 404) return null;
-    return (await response.json()) as MagicaRun;
+    return parseMagicaRun(await response.json());
   }
 
   private async getSchema(
@@ -401,6 +418,50 @@ function assignIfPresent(
 ): void {
   if (value === undefined) return;
   payload[fieldName(fields, candidates) ?? fallback] = value;
+}
+
+function parseMagicaRun(raw: unknown): MagicaRun | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const nested = record.data;
+  const inner =
+    nested && typeof nested === "object" && !record.status && !record.runId && !record.id
+      ? (nested as Record<string, unknown>)
+      : record;
+  const status =
+    (typeof inner.status === "string" && inner.status) ||
+    (typeof inner.state === "string" && inner.state) ||
+    "";
+  const runId =
+    (typeof inner.runId === "string" && inner.runId) ||
+    (typeof inner.id === "string" && inner.id) ||
+    undefined;
+  if (!status && !runId && inner.output == null && inner.result == null) return null;
+  return {
+    id: typeof inner.id === "string" ? inner.id : undefined,
+    runId: typeof inner.runId === "string" ? inner.runId : runId,
+    nodeType: typeof inner.nodeType === "string" ? inner.nodeType : undefined,
+    subModelId: typeof inner.subModelId === "string" ? inner.subModelId : null,
+    status,
+    output: inner.output ?? inner.result,
+    error: typeof inner.error === "string" ? inner.error : null,
+    userMessage: typeof inner.userMessage === "string" ? inner.userMessage : null,
+    creditUsed: typeof inner.creditUsed === "number" ? inner.creditUsed : null,
+    createdAt: typeof inner.createdAt === "string" ? inner.createdAt : undefined,
+  };
+}
+
+function runOutcome(run: MagicaRun, nodeType: string): "succeeded" | "failed" | "cancelled" | "pending" {
+  const status = run.status.toUpperCase();
+  if (SUCCEEDED.has(status)) return "succeeded";
+  if (FAILED.has(status)) return "failed";
+  if (CANCELLED.has(status)) return "cancelled";
+  const keys =
+    nodeType === "merge_videos"
+      ? ["video_url", "videos", "video", "url"]
+      : ["image_url", "images", "image", "url"];
+  if (extractMediaUrl(run.output, keys)) return "succeeded";
+  return "pending";
 }
 
 function extractMediaUrl(output: unknown, preferredKeys: string[]): string | undefined {

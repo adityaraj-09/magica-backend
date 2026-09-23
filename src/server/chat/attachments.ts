@@ -86,13 +86,17 @@ export type LibraryAttachmentJson = {
   expiresAt: string | null;
 };
 
+const libraryQuerySchema = paginationQuerySchema.extend({
+  chatId: z.string().uuid().optional(),
+});
+
 export async function listLibraryAttachments(input: {
   userId: string;
   query: unknown;
   db?: PrismaClient;
   now?: Date;
 }): Promise<{ items: LibraryAttachmentJson[]; nextCursor: string | null }> {
-  const query = paginationQuerySchema.parse(input.query);
+  const query = libraryQuerySchema.parse(input.query);
   const db = input.db ?? prisma;
   const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
   const now = input.now ?? new Date();
@@ -105,6 +109,14 @@ export async function listLibraryAttachments(input: {
       AND: [
         { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
         createdAtIdWhere(cursor) ?? {},
+        query.chatId
+          ? {
+              OR: [
+                { chatId: query.chatId },
+                { messages: { some: { chatId: query.chatId } } },
+              ],
+            }
+          : {},
       ],
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],

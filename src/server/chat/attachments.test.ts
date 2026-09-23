@@ -110,4 +110,29 @@ describe("listLibraryAttachments", () => {
     expect(result.items).toHaveLength(1);
     expect(result.nextCursor).toBe(encodeCursor(newer.createdAt, newer.id));
   });
+
+  it("scopes to one chat’s uploads, generated files, and attached inputs", async () => {
+    const findMany = vi.fn(async () => []);
+    await listLibraryAttachments({
+      userId: ids.userId,
+      query: { chatId: ids.chatId, limit: "20" },
+      db: { attachment: { findMany } } as never,
+      now,
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: ids.userId,
+          AND: expect.arrayContaining([
+            {
+              OR: [
+                { chatId: ids.chatId },
+                { messages: { some: { chatId: ids.chatId } } },
+              ],
+            },
+          ]),
+        }),
+      }),
+    );
+  });
 });

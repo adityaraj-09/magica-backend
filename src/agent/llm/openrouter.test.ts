@@ -109,6 +109,8 @@ describe("OpenRouterFreeClient", () => {
     expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 2, cost: 0 });
     expect(captured?.model).toBe(OPENROUTER_FREE_ROUTE);
     expect(captured?.stream).toBe(true);
+    expect(captured?.usage).toEqual({ include: true });
+    expect(captured?.stream_options).toEqual({ include_usage: true });
     expect(captured).not.toHaveProperty("models");
   });
 

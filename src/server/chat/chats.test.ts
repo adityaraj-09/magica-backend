@@ -27,6 +27,7 @@ function chatRow(overrides: Record<string, unknown> = {}) {
     isFavorite: false,
     lastMessageAt: createdAt,
     lastMessageId: null,
+    projectId: null,
     createdAt,
     updatedAt: createdAt,
     deletedAt: null,
@@ -148,6 +149,9 @@ describe("chats", () => {
         createdAt,
         errorCode: null,
         errorMessage: null,
+        promptTokens: 0,
+        completionTokens: 0,
+        agentRun: null,
         attachments: [],
       },
     ]);
@@ -166,5 +170,47 @@ describe("chats", () => {
       }),
     );
     expect(result.items[0]?.contentBlocks).toEqual([{ type: "text", text: "hi" }]);
+  });
+
+  it("includes token and credit usage on assistant messages", async () => {
+    const findUnique = vi.fn(async () => chatRow());
+    const findMany = vi.fn(async () => [
+      {
+        id: "55555555-5555-5555-5555-555555555555",
+        chatId: ids.chatId,
+        role: "ASSISTANT",
+        status: "SUCCESS",
+        contentBlocks: [{ type: "text", text: "done" }],
+        createdAt,
+        errorCode: null,
+        errorMessage: null,
+        promptTokens: 12,
+        completionTokens: 8,
+        agentRun: {
+          promptTokens: 12,
+          completionTokens: 8,
+          settledCredits: { toString: () => "0" },
+          modelRouted: "deepseek/deepseek-r1:free",
+          thinkingDurationMs: 2400,
+        },
+        attachments: [],
+      },
+    ]);
+    const result = await listMessages({
+      userId: ids.userId,
+      chatId: ids.chatId,
+      query: {},
+      db: {
+        chat: { findUnique },
+        message: { findMany },
+      } as never,
+    });
+    expect(result.items[0]?.usage).toEqual({
+      promptTokens: 12,
+      completionTokens: 8,
+      credits: "0",
+      model: "deepseek/deepseek-r1:free",
+      durationMs: 2400,
+    });
   });
 });

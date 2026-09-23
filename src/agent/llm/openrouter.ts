@@ -95,6 +95,7 @@ export class OpenRouterFreeClient implements ChatClient {
       messages: request.messages,
       stream: true,
       stream_options: { include_usage: true },
+      usage: { include: true },
     };
     if (tools) {
       body.tools = tools;

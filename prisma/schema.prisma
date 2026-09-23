@@ -143,6 +143,7 @@ model User {
   updatedAt     DateTime @updatedAt
 
   chats             Chat[]
+  projects          Project[]
   messages          Message[]
   agentRuns         AgentRun[]
   attachments       Attachment[]
@@ -160,9 +161,29 @@ model User {
 // Chat
 // -----------------------------------------------------------------------------
 
+model Project {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  name          String
+  icon          String    @default("writing")
+  memoryEnabled Boolean   @default(true)
+  instructions  String    @default("")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chats Chat[]
+
+  @@index([userId, createdAt, id])
+  @@index([userId, deletedAt, createdAt, id])
+  @@map("projects")
+}
+
 model Chat {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String    @db.Uuid
+  projectId     String?   @db.Uuid
   title         String    @default("New chat")
   isFavorite    Boolean   @default(false)
   lastMessageAt DateTime  @default(now())
@@ -171,18 +192,20 @@ model Chat {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  user              User              @relation(fields: [userId], references: [id], onDelete: Restrict)
-  messages          Message[]
-  agentRuns         AgentRun[]
-  attachments       Attachment[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages           Message[]
+  agentRuns          AgentRun[]
+  attachments        Attachment[]
   messageAttachments MessageAttachment[]
-  toolInvocations   ToolInvocation[]
-  waitpoints        Waitpoint[]
-  creditLedger      CreditLedger[]
+  toolInvocations    ToolInvocation[]
+  waitpoints         Waitpoint[]
+  creditLedger       CreditLedger[]
 
   @@index([userId, lastMessageAt, id])
   @@index([userId, isFavorite, lastMessageAt, id])
   @@index([userId, deletedAt, lastMessageAt, id])
+  @@index([userId, projectId, lastMessageAt, id])
   @@index([createdAt, id])
   @@map("chats")
 }

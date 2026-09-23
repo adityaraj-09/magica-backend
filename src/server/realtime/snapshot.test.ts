@@ -89,6 +89,13 @@ describe("loadRunSnapshot", () => {
       { type: "text", text: "I will crop" },
     ]);
     expect(snapshot.realtimeToken).toBe("pat_live");
+    expect(snapshot.usage).toEqual({
+      promptTokens: 0,
+      completionTokens: 0,
+      credits: "0",
+      model: null,
+      durationMs: 40,
+    });
     expect(waitpointUpdate).not.toHaveBeenCalled();
   });
 

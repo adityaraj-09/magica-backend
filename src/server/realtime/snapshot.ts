@@ -101,6 +101,13 @@ export async function loadRunSnapshot(input: {
     waitpoint,
     errorCode: run.errorCode,
     errorMessage: run.errorMessage,
+    usage: {
+      promptTokens: run.promptTokens ?? 0,
+      completionTokens: run.completionTokens ?? 0,
+      credits: run.settledCredits?.toString() ?? "0",
+      model: run.modelRouted ?? null,
+      durationMs: run.thinkingDurationMs ?? null,
+    },
   };
 
   const realtimeToken =
