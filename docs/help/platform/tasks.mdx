@@ -1,0 +1,25 @@
+---
+title: Tasks
+description: One conversation, one active run, and the files that belong to it.
+---
+
+A **task** is a chat. Open **Tasks** in the sidebar for the full list, or use **Recent tasks** in the sidebar.
+
+## What a task contains
+
+- your messages and the assistant replies
+- streamed text while a run is live
+- tool cards (prompt, status, output image)
+- uploads and generated files for that task only
+
+On a specific task page, the folder control opens **All files in this task** — uploads and generated assets for that chat.
+
+## One run at a time
+
+Each chat has one active turn. A second send returns an error until the run completes, fails, is cancelled, or you stop it.
+
+Refresh or switch chats and the active run resumes from Postgres. If the live Trigger stream drops, the UI polls run status.
+
+## Favorites and search
+
+Pin a task from the task list. Search in the sidebar filters your tasks by title and text.

@@ -1,0 +1,16 @@
+---
+title: Uploads
+description: Files go through Transloadit, then appear in the task and Library.
+---
+
+Files go through Transloadit (5 GB / month, 0.5 GB per file). Failed or interrupted uploads can be retried from the composer chip.
+
+## After a successful upload
+
+- The file shows as a thumbnail in the composer (including Library picks)
+- It is stored as an attachment with origin `UPLOAD`
+- Generated outputs use origin `GENERATED` and also appear in Library and **All files in this task**
+
+<Note>
+  Do not ask the agent for a URL you already attached. The file is already visible to the turn.
+</Note>

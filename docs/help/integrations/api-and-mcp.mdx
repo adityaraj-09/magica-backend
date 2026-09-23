@@ -1,0 +1,19 @@
+---
+title: Do you have an API?
+description: Public REST and MCP use the same gxk_live_ keys.
+---
+
+Yes. Galaxy has a public API and an MCP server.
+
+Create a key in **Settings → API Keys**. Send it as `Authorization: Bearer gxk_live_…`. Session cookies are not accepted on `/api/v1` or `/api/mcp`.
+
+## What you can do
+
+- create and list chats
+- submit a turn (`POST /api/v1/completions`) and receive a `runId` immediately
+- poll `GET /api/v1/chats/{chatId}/runs/{runId}` until `COMPLETE`, `FAILED`, or `CANCELLED`
+- call Crop Image, GPT Image 2, and Merge Videos directly
+- subscribe to signed webhooks
+- connect an MCP client to the same tools
+
+Full reference: [https://magica-adi.mintlify.site/](https://magica-adi.mintlify.site/)

@@ -1,0 +1,23 @@
+---
+title: Tools
+description: Only the tools the agent can actually call.
+---
+
+The **Tools** page lists capabilities Galaxy supports. It is not the full Magica marketplace.
+
+## Supported tools
+
+| Tool | What it does |
+| --- | --- |
+| GPT Image 2 | Generate a new image from a prompt, or edit an image when you attach one |
+| Crop Image | Crop by percent or pixel rectangle |
+| Merge Videos | Concatenate 2–100 videos with none, fade, or dissolve |
+| Web search | Look up current sources |
+| Sandbox | Run short Python |
+| Load skill / read skill asset | Follow a shipped skill (`image-editing`, `sandbox-python`, `video-merge`) |
+
+The agent calls these from chat when they are needed. A generate-image card shows the **prompt as soon as it is decided**, including while the image is still generating. The same prompt is stored on the tool result for the finished card and image preview.
+
+<Note>
+  OpenRouter writes the reply. Magica tools only run when the turn needs image or video work.
+</Note>

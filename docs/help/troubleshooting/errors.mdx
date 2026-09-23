@@ -1,0 +1,25 @@
+---
+title: Getting an error — what should I do?
+description: Read the chat first, then retry or stop.
+---
+
+A failed turn should explain itself in the chat: status, a safe error, tool outcomes, and any partial text.
+
+## First checks
+
+1. Read the assistant error line — it is meant to be user-safe, not a raw stack trace.
+2. Confirm the run status (`FAILED`, `CANCELLED`, or still `WORKING`).
+3. If a tool failed, open the tool card for the provider message.
+4. Send another message to retry, or stop a stuck run.
+
+## Common cases
+
+| What you see | What it usually means |
+| --- | --- |
+| This chat already has a running task | One active run per chat. Stop it or wait. |
+| Not enough credits | Approve the credit waitpoint or add credits. |
+| Free models returned no output | OpenRouter empty stream. Send again. |
+| Temporary 429 | Rate limit from the model provider. Wait and retry. |
+| Upload failed | Retry the composer chip. See [Uploads](/troubleshooting/uploads). |
+
+If the UI looks healthy but the run never moves, refresh. Postgres is the source of truth; realtime reconnects or falls back to polling.

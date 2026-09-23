@@ -1,0 +1,29 @@
+---
+title: Should I use chat, Tools, API, or MCP?
+description: Choose the surface based on the outcome and how much control you need.
+---
+
+Choose the surface based on the outcome you want and how much direct control you need.
+
+| Your goal | Best place to start |
+| --- | --- |
+| Complete a one-time or open-ended task | New task |
+| Run one supported tool from a catalog | Tools |
+| Call Galaxy from your own software | API |
+| Let an MCP-compatible client use Galaxy | MCP |
+
+## Use a task for outcomes
+
+Choose **New task** when you know the result you want but do not want to design every step. The agent can write, search, generate or crop images, merge videos, and load skills.
+
+Example: “Generate a snowy mountain at dusk, then crop the sky.”
+
+## Use Tools for one capability
+
+Open **Tools** when you want to see the supported catalog: GPT Image 2, Crop Image, Merge Videos, Web search, Sandbox, and skills. The agent still calls these from chat; the Tools page is the catalog, not a separate runner.
+
+## Use API or MCP for external access
+
+Use the API when your application should create chats and poll runs. Use MCP when a compatible client should discover the same tools.
+
+Public API docs: [https://magica-adi.mintlify.site/](https://magica-adi.mintlify.site/)

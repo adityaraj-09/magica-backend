@@ -1,0 +1,69 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Galaxy Help Center",
+  "description": "Guides for tasks, projects, library, credits, tools, API, and troubleshooting.",
+  "colors": {
+    "primary": "#1b1b1b",
+    "light": "#1b1b1b",
+    "dark": "#ffffff"
+  },
+  "appearance": {
+    "default": "light"
+  },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "API docs",
+      "href": "https://magica-adi.mintlify.site/"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": [
+          "index",
+          "getting-started/what-can-i-do",
+          "getting-started/how-do-i-use",
+          "getting-started/first-task",
+          "getting-started/which-surface"
+        ]
+      },
+      {
+        "group": "Account and platform",
+        "pages": [
+          "platform/tasks",
+          "platform/projects",
+          "platform/library",
+          "platform/tools",
+          "platform/settings"
+        ]
+      },
+      {
+        "group": "Credits and usage",
+        "pages": [
+          "credits/how-credits-work",
+          "credits/tokens",
+          "credits/failed-runs"
+        ]
+      },
+      {
+        "group": "Privacy",
+        "pages": ["privacy/data"]
+      },
+      {
+        "group": "Integrations and API",
+        "pages": ["integrations/api-and-mcp"]
+      },
+      {
+        "group": "Troubleshooting",
+        "pages": [
+          "troubleshooting/errors",
+          "troubleshooting/one-run",
+          "troubleshooting/uploads"
+        ]
+      }
+    ]
+  }
+}

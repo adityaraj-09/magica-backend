@@ -1,0 +1,25 @@
+---
+title: How are tokens counted?
+description: Prompt and completion tokens come from OpenRouter, then we add them up for the run.
+---
+
+Tokens for a run are **what OpenRouter reports**, not a local word count.
+
+## Per LLM call
+
+Each model call is streamed with usage enabled. When the stream ends, OpenRouter sends `prompt_tokens` and `completion_tokens`.
+
+- **Prompt tokens** — system prompt, history, images, and tool results sent into that call
+- **Completion tokens** — text and tool-call JSON the model wrote
+
+## Per run
+
+A run can make several LLM calls (first reply, then after tools). Galaxy **adds** those usages together and stores them on the run and the assistant message.
+
+The footer shows `prompt + completion` as **N tokens**.
+
+## Not in the token count
+
+- Magica tools — those use application credits
+- Failed OpenRouter retries — only the attempt that returns counts
+- A guessed local tokenizer — if OpenRouter omits usage, that call is `0`

@@ -1,0 +1,24 @@
+---
+title: How do credits work?
+description: Application credits vs OpenRouter tokens.
+---
+
+Galaxy uses a credits balance for tool work. Credits are not a fixed price per “task” — they follow what actually ran.
+
+## What uses credits
+
+- **Magica tools** (GPT Image 2, Crop Image, Merge Videos) settle once when the tool finishes
+- A turn may reserve credits up front. If the estimate is larger than the remaining reserve, you get a **credit waitpoint** — approve or stop
+- Unused reserve is reconciled when the run finishes
+
+## What does not charge application credits
+
+OpenRouter Free records **tokens** at **0 application credits**. The footer under a reply still shows token counts so you can see how large the turn was.
+
+## Track usage
+
+Each finished assistant message shows duration, tokens, credits, and the routed model. Your balance is on **Settings → Account** and on a task page next to the folder control.
+
+<Tip>
+  Image and video tools cost more than a text-only reply. If usage looks high, check whether GPT Image 2 or Merge Videos ran, and whether the same chat had more than one tool turn.
+</Tip>

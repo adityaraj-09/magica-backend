@@ -1,0 +1,16 @@
+---
+title: A tool ran but there is no output
+description: What happens to credits and partial work when a turn fails.
+---
+
+If a generation **fails completely** (no output), Galaxy keeps the error on the assistant message and does not treat the turn as a success. Tool settlement is once per successful tool invocation. A failed Magica call should not charge a completed-tool cost.
+
+If a generation **completed** but you do not like the image or crop, that successful tool is still settled. Send another message to retry or revise.
+
+## Partial work
+
+If credits run out mid-turn, earlier successful tool results stay in the chat. Approve a credit waitpoint to continue, or stop and keep what already landed.
+
+## What you should see
+
+A failed turn should stay explainable in the chat: status, a safe error, tool outcomes, any partial text, and a way to send again.

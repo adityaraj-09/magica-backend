@@ -1,0 +1,40 @@
+# Galaxy Help Center
+
+> Guides for tasks, projects, library, credits, tools, API, and troubleshooting.
+
+## Get started
+
+- [Overview](/)
+- [What can Galaxy do?](/getting-started/what-can-i-do)
+- [How do I use Galaxy?](/getting-started/how-do-i-use)
+- [Complete your first task](/getting-started/first-task)
+- [Chat, Tools, API, or MCP?](/getting-started/which-surface)
+
+## Account and platform
+
+- [Tasks](/platform/tasks)
+- [Projects](/platform/projects)
+- [Library](/platform/library)
+- [Tools](/platform/tools)
+- [Settings](/platform/settings)
+
+## Credits and usage
+
+- [How credits work](/credits/how-credits-work)
+- [How tokens are counted](/credits/tokens)
+- [Failed runs](/credits/failed-runs)
+
+## Privacy and integrations
+
+- [What data we store](/privacy/data)
+- [API and MCP](/integrations/api-and-mcp)
+
+## Troubleshooting
+
+- [Errors](/troubleshooting/errors)
+- [Send is blocked](/troubleshooting/one-run)
+- [Uploads](/troubleshooting/uploads)
+
+## Related
+
+- [API / MCP docs](https://magica-adi.mintlify.site/)
