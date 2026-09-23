@@ -8,6 +8,7 @@ import {
   encodeCursor,
   paginationQuerySchema,
 } from "@/server/http/cursor";
+import { memoryUsedPercent } from "@/agent/runtime/project-memory";
 
 const iconSchema = z.enum(["investing", "homework", "writing", "health"]);
 
@@ -39,6 +40,8 @@ export type ProjectJson = {
   icon: string;
   memoryEnabled: boolean;
   instructions: string;
+  memory: string;
+  memoryUsedPercent: number;
   taskCount: number;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +53,7 @@ const projectSelect = {
   icon: true,
   memoryEnabled: true,
   instructions: true,
+  memory: true,
   createdAt: true,
   updatedAt: true,
   _count: { select: { chats: { where: { deletedAt: null } } } },
@@ -61,6 +65,7 @@ function toProjectJson(row: {
   icon?: string | null;
   memoryEnabled?: boolean | null;
   instructions?: string | null;
+  memory?: string | null;
   createdAt: Date;
   updatedAt: Date;
   _count: { chats: number };
@@ -71,6 +76,8 @@ function toProjectJson(row: {
     icon: row.icon ?? "writing",
     memoryEnabled: row.memoryEnabled ?? true,
     instructions: row.instructions ?? "",
+    memory: row.memory ?? "",
+    memoryUsedPercent: memoryUsedPercent(row.memory ?? ""),
     taskCount: row._count.chats,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

@@ -126,6 +126,8 @@ function createDeps(llm: ChatClient, extras: Partial<AgentLoopDeps> = {}): Agent
     updateRun: vi.fn(async () => undefined),
     getChatTitle: vi.fn(async () => "Existing title"),
     renameChat: vi.fn(async () => undefined),
+    getChatProject: vi.fn(async () => null),
+    rememberProjectTurn: vi.fn(async () => undefined),
     skills,
   };
 
@@ -186,6 +188,28 @@ describe("runAgentLoop", () => {
       expect.objectContaining({ status: "COMPLETE", modelRouted: "deepseek/deepseek-r1:free" }),
     );
     expect(deps.children.run).not.toHaveBeenCalled();
+    expect(deps.store.rememberProjectTurn).toHaveBeenCalledWith(ids.chatId, "hi");
+  });
+
+  it("puts project memory in the system prompt when it is on", async () => {
+    const llm: ChatClient = {
+      complete: vi.fn(async () => completion({ text: "sure", finishReason: "stop" })),
+    };
+    const deps = createDeps(llm);
+    deps.store.getChatProject = vi.fn(async () => ({
+      memoryEnabled: true,
+      instructions: "Stay concise.",
+      memory: "- prefers icy mountains",
+    }));
+    await runAgentLoop(turn, deps);
+    const messages = vi.mocked(llm.complete).mock.calls[0]?.[0]?.messages ?? [];
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        role: "system",
+        content: expect.stringContaining("prefers icy mountains"),
+      }),
+    );
+    expect(String(messages[0]?.content)).toContain("Stay concise.");
   });
 
   it("executes load_skill through the registry and persists the content hash", async () => {

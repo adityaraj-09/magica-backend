@@ -77,7 +77,9 @@ export async function runAgentLoop(
   const priorMessages = messagesToLlm(
     history.filter((message) => message.role !== "ASSISTANT" || message.status !== "STREAMING"),
   );
-  await nameChatFromUserText(deps, run.chatId, userTextFromHistory(history));
+  const userText = userTextFromHistory(history);
+  const project = await deps.store.getChatProject(run.chatId);
+  await nameChatFromUserText(deps, run.chatId, userText);
   let promptTokens = 0;
   let completionTokens = 0;
   let modelRouted: string | undefined;
@@ -117,7 +119,7 @@ export async function runAgentLoop(
         currentStep: `llm:${turn}`,
       });
 
-      const llmMessages = buildMessages(deps, priorMessages, blocks);
+      const llmMessages = buildMessages(deps, priorMessages, blocks, project);
       const completion = await completeWithRetry(deps, llmMessages);
       promptTokens += completion.usage.promptTokens;
       completionTokens += completion.usage.completionTokens;
@@ -157,6 +159,7 @@ export async function runAgentLoop(
           completionTokens,
           modelRouted,
           thinkingStartedAt,
+          userText,
         });
       }
 
@@ -310,6 +313,7 @@ function buildMessages(
   deps: AgentLoopDeps,
   priorMessages: LlmMessage[],
   liveBlocks: ContentBlock[],
+  project: { memoryEnabled: boolean; instructions: string; memory: string } | null,
 ): LlmMessage[] {
   const live = messagesToLlm([
     {
@@ -320,7 +324,13 @@ function buildMessages(
     },
   ]);
   return [
-    { role: "system", content: buildSystemPrompt(deps.skills) },
+    {
+      role: "system",
+      content: buildSystemPrompt(deps.skills, {
+        instructions: project?.instructions,
+        memory: project?.memoryEnabled ? project.memory : undefined,
+      }),
+    },
     ...priorMessages,
     ...live,
   ];
@@ -843,6 +853,7 @@ async function terminate(
     thinkingStartedAt: Date;
     errorCode?: string;
     errorMessage?: string;
+    userText?: string;
   },
 ): Promise<{ status: "COMPLETE" | "FAILED" | "CANCELLED"; assistantMessageId: string }> {
   const messageStatus =
@@ -900,6 +911,13 @@ async function terminate(
     errorMessage: extras.errorMessage ?? null,
   });
   await realtime.flush();
+  if (extras.status === "COMPLETE") {
+    try {
+      await deps.store.rememberProjectTurn(run.chatId, extras.userText ?? "");
+    } catch {
+      // Memory must not fail the turn.
+    }
+  }
   return { status: extras.status, assistantMessageId };
 }
 

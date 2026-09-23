@@ -7,6 +7,7 @@ import {
 } from "./content-blocks";
 import type { HistoryMessage } from "./history";
 import { overlayFromWaitpoint, type WaitpointOverlay } from "./realtime";
+import { compactMemoryNote, mergeProjectMemory } from "./project-memory";
 
 export type RunSnapshot = {
   id: string;
@@ -404,6 +405,45 @@ export class AgentStore {
       data: { status: "EXPIRED", completedAt: now },
     });
     return toWaitpointSnapshot(expired);
+  }
+
+  async getChatProject(chatId: string): Promise<{
+    memoryEnabled: boolean;
+    instructions: string;
+    memory: string;
+  } | null> {
+    const chat = await this.prisma.chat.findUnique({
+      where: { id: chatId },
+      select: {
+        project: {
+          select: { memoryEnabled: true, instructions: true, memory: true, deletedAt: true },
+        },
+      },
+    });
+    if (!chat?.project || chat.project.deletedAt) return null;
+    return {
+      memoryEnabled: chat.project.memoryEnabled,
+      instructions: chat.project.instructions,
+      memory: chat.project.memory,
+    };
+  }
+
+  async rememberProjectTurn(chatId: string, userText: string): Promise<void> {
+    const note = compactMemoryNote(userText);
+    if (!note) return;
+    const chat = await this.prisma.chat.findUnique({
+      where: { id: chatId },
+      select: {
+        project: { select: { id: true, memoryEnabled: true, memory: true, deletedAt: true } },
+      },
+    });
+    if (!chat?.project || chat.project.deletedAt || !chat.project.memoryEnabled) return;
+    const next = mergeProjectMemory(chat.project.memory, note);
+    if (next === chat.project.memory) return;
+    await this.prisma.project.update({
+      where: { id: chat.project.id },
+      data: { memory: next },
+    });
   }
 
   async getChatTitle(chatId: string): Promise<string | null> {
