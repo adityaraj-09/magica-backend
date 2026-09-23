@@ -12,7 +12,7 @@ Base URL: `https://magica-backend-oda9.onrender.com`
 ## What you can do
 
 - create and list chats
-- submit a turn (`POST /api/v1/completions`) and receive a `runId` immediately
+- submit a turn (`POST /api/v1/completions`) without creating a chat first — omit `chatId`, optionally pass `image_urls` — and receive a `runId` immediately
 - poll `GET /api/v1/chats/{chatId}/runs/{runId}` until `COMPLETE`, `FAILED`, or `CANCELLED`
 - call Crop Image, GPT Image 2, and Merge Videos directly
 - subscribe to signed webhooks

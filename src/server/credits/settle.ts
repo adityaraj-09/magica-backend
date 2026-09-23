@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { prisma } from "@/server/db";
+import { prisma, TRANSACTION_OPTIONS } from "@/server/db";
 import {
   runFinalizeIdempotencyKey,
   runRefundIdempotencyKey,
@@ -170,7 +170,7 @@ export async function settleToolCharge(
       charged: charged.toString(),
       settledCredits: settledCredits.toString(),
     };
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 export async function finalizeRunCredits(
@@ -253,7 +253,7 @@ export async function finalizeRunCredits(
       refunded: refund.toString(),
       settledCredits: agentRun.settledCredits.toString(),
     };
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 function holdRemaining(reserved: Prisma.Decimal, settled: Prisma.Decimal): Prisma.Decimal {

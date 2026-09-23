@@ -19,6 +19,8 @@ const {
   userUpdate,
   ledgerCreate,
   attachmentFindMany,
+  attachmentFindFirst,
+  attachmentCreate,
 } = vi.hoisted(() => ({
   dispatchAgentTurn: vi.fn(),
   createRunRealtimeToken: vi.fn(),
@@ -36,6 +38,8 @@ const {
   userUpdate: vi.fn(),
   ledgerCreate: vi.fn(),
   attachmentFindMany: vi.fn(),
+  attachmentFindFirst: vi.fn(),
+  attachmentCreate: vi.fn(),
 }));
 
 vi.mock("@/server/jobs/dispatch.js", () => ({ dispatchAgentTurn }));
@@ -44,7 +48,13 @@ vi.mock("@/server/db.js", () => ({
   prisma: {
     $transaction: (fn: (tx: unknown) => Promise<unknown>) => transaction(fn),
     agentRun: { update: runUpdate },
+    attachment: {
+      findMany: attachmentFindMany,
+      findFirst: attachmentFindFirst,
+      create: attachmentCreate,
+    },
   },
+  TRANSACTION_OPTIONS: { maxWait: 10_000, timeout: 20_000 },
 }));
 
 import { admitTurn } from "./admit-turn";
@@ -73,7 +83,11 @@ function tx() {
     agentRun: { findFirst: runFindFirst, create: runCreate, count: runCount },
     user: { findUniqueOrThrow: userFindUniqueOrThrow, update: userUpdate },
     creditLedger: { create: ledgerCreate },
-    attachment: { findMany: attachmentFindMany },
+    attachment: {
+      findMany: attachmentFindMany,
+      findFirst: attachmentFindFirst,
+      create: attachmentCreate,
+    },
   };
 }
 
@@ -87,6 +101,13 @@ describe("admitTurn", () => {
     runFindFirst.mockResolvedValue(null);
     runCount.mockResolvedValue(0);
     attachmentFindMany.mockResolvedValue([]);
+    attachmentFindFirst.mockResolvedValue(null);
+    attachmentCreate.mockImplementation(async ({ data }: { data: { url: string; filename: string; mimeType: string } }) => ({
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      filename: data.filename,
+      mimeType: data.mimeType,
+      url: data.url,
+    }));
     userFindUniqueOrThrow.mockResolvedValue({ creditBalance: new Prisma.Decimal("100") });
     messageCreate.mockResolvedValue({ id: ids.messageId });
     runCreate.mockResolvedValue({ id: ids.runId });
@@ -229,6 +250,50 @@ describe("admitTurn", () => {
         }),
       }),
     );
+  });
+
+  it("persists image URLs as asset blocks", async () => {
+    await admitTurn({
+      user,
+      chatId: ids.chatId,
+      body: { text: "what is this", image_urls: ["https://cdn.example/photo.jpg"] },
+    });
+    expect(attachmentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          url: "https://cdn.example/photo.jpg",
+          mimeType: "image/jpeg",
+          origin: "UPLOAD",
+        }),
+      }),
+    );
+    expect(messageCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contentBlocks: [
+            { type: "text", text: "what is this" },
+            {
+              type: "asset",
+              url: "https://cdn.example/photo.jpg",
+              mimeType: "image/jpeg",
+              filename: "photo.jpg",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("maps a closed Prisma transaction to a retryable 503", async () => {
+    transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Transaction not found", {
+        code: "P2028",
+        clientVersion: "6.19.3",
+      }),
+    );
+    await expect(
+      admitTurn({ user, chatId: ids.chatId, body: { text: "hello" } }),
+    ).rejects.toMatchObject({ status: 503, code: "DATABASE_BUSY" });
   });
 
   it("rejects when the user cannot cover the reserve", async () => {

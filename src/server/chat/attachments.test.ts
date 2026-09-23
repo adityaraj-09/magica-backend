@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { listLibraryAttachments, resolveSendAttachments } from "./attachments";
+import {
+  collectSendImageUrls,
+  listLibraryAttachments,
+  persistSendImageUrls,
+  resolveSendAttachments,
+} from "./attachments";
 import { encodeCursor } from "@/server/http/cursor";
 
 const ids = {
@@ -134,5 +139,42 @@ describe("listLibraryAttachments", () => {
         }),
       }),
     );
+  });
+});
+
+describe("send image URLs", () => {
+  it("collects snake_case, camelCase, and singular URLs", () => {
+    expect(
+      collectSendImageUrls({
+        image_urls: ["https://cdn.example/a.png"],
+        image_url: "https://cdn.example/b.jpg",
+      }),
+    ).toEqual(["https://cdn.example/a.png", "https://cdn.example/b.jpg"]);
+  });
+
+  it("creates an attachment when the URL is new", async () => {
+    const findFirst = vi.fn(async () => null);
+    const create = vi.fn(async () => ({
+      id: ids.directId,
+      filename: "photo.jpg",
+      mimeType: "image/jpeg",
+      url: "https://cdn.example/photo.jpg",
+    }));
+    const created = await persistSendImageUrls({
+      userId: ids.userId,
+      chatId: ids.chatId,
+      urls: ["https://cdn.example/photo.jpg"],
+      db: { attachment: { findFirst, create } } as never,
+    });
+    expect(create).toHaveBeenCalled();
+    expect(created).toEqual([
+      {
+        id: ids.directId,
+        filename: "photo.jpg",
+        mimeType: "image/jpeg",
+        url: "https://cdn.example/photo.jpg",
+        source: "DIRECT_UPLOAD",
+      },
+    ]);
   });
 });

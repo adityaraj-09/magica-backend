@@ -22,12 +22,14 @@ export BASE=https://magica-backend-oda9.onrender.com
 
     Store the `key` field. Later list calls only return `prefix`.
   </Step>
-  <Step title="Queue a completion">
+  <Step title="Send a message">
+    You do not create a chat first. Omit `chatId` and the API creates one.
+
     ```bash
     curl -X POST "$BASE/api/v1/completions" \
       -H "Authorization: Bearer $GALAXY_API_KEY" \
       -H "Content-Type: application/json" \
-      -d '{"text":"Summarize what this agent can do"}'
+      -d '{"text":"What is in this photo?","image_urls":["https://cdn.example.com/photo.jpg"]}'
     ```
 
     Response `202`:
@@ -54,7 +56,7 @@ export BASE=https://magica-backend-oda9.onrender.com
 
 <CardGroup cols={2}>
   <Card title="Send into an existing chat" icon="messages" href="/messages">
-    `POST /chats/{chatId}/messages` with `text`, `planMode`, and `attachmentIds`.
+    `POST /chats/{chatId}/messages` with `text` and `image_urls` or `attachmentIds`.
   </Card>
   <Card title="Call a Magica tool" icon="image" href="/magica">
     Crop, generate, or merge without waiting on the agent loop.

@@ -18,7 +18,7 @@ Base URL: `https://magica-backend-oda9.onrender.com` — public routes are under
     Sign in to the product and create a key on **API / MCP**. The full `gxk_live_…` value is shown once. Send it as `Authorization: Bearer $GALAXY_API_KEY` on every public request.
   </Step>
   <Step title="Submit a turn">
-    `POST /api/v1/completions` with `{ "text": "…" }` creates a chat if you omit `chatId`, then queues the agent. The HTTP call returns immediately with `runId`.
+    `POST /api/v1/completions` with `{ "text": "…" }` — omit `chatId` to start a new chat, or pass it to continue. Add `image_urls` to attach public images. The HTTP call returns immediately with `runId`.
   </Step>
   <Step title="Poll until the run finishes">
     `GET /api/v1/chats/{chatId}/runs/{runId}` until `status` is `COMPLETE`, `FAILED`, or `CANCELLED`. Partial text, tool outcomes, and the error message are on that snapshot.

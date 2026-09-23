@@ -72,6 +72,8 @@ export const MCP_TOOLS: McpTool[] = [
         planMode: { type: "boolean" },
         clientMessageId: uuid,
         attachmentIds: { type: "array", items: uuid },
+        image_urls: { type: "array", items: { type: "string" }, description: "Public http(s) image URLs to attach." },
+        image_url: { type: "string", description: "Single public image URL." },
       },
       ["chatId", "text"],
     ),
@@ -79,7 +81,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "complete",
     description:
-      "Queue a chat-style completion. Omit chatId to create a chat. text, prompt, or the last user message is the turn.",
+      "Send a message. Omit chatId to create a chat, or pass chatId to continue one. text, prompt, or the last user message is the turn. Attach images with image_urls or attachmentIds.",
     inputSchema: object({
       chatId: { ...uuid, description: "Existing chat. Omitted creates one." },
       text: { type: "string", maxLength: 8192 },
@@ -87,6 +89,8 @@ export const MCP_TOOLS: McpTool[] = [
       planMode: { type: "boolean" },
       clientMessageId: uuid,
       attachmentIds: { type: "array", items: uuid },
+      image_urls: { type: "array", items: { type: "string" }, description: "Public http(s) image URLs to attach." },
+      image_url: { type: "string", description: "Single public image URL." },
       messages: {
         type: "array",
         items: {
@@ -187,6 +191,10 @@ export async function callMcpTool(input: {
             planMode: args.planMode,
             clientMessageId: args.clientMessageId,
             attachmentIds: args.attachmentIds,
+            image_urls: args.image_urls,
+            imageUrls: args.imageUrls,
+            image_url: args.image_url,
+            imageUrl: args.imageUrl,
           },
         });
         return jsonResult(queued(admitted));

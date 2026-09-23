@@ -93,33 +93,68 @@ components:
         text:
           type: string
           maxLength: 8192
+          description: Message text. Required unless `prompt` or `messages` supplies it.
         prompt:
           type: string
           description: Completion alias for `text`.
         messages:
           type: array
-          description: OpenAI-style messages. The last user content is the turn text.
+          description: OpenAI-style messages. The last user content is the turn text. Content may be a string or parts with `image_url`.
           items:
             type: object
             properties:
               role:
                 type: string
               content:
-                type: string
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        text:
+                          type: string
+                        image_url:
+                          oneOf:
+                            - type: string
+                            - type: object
+                              properties:
+                                url:
+                                  type: string
+                                  format: uri
         clientMessageId:
           type: string
           format: uuid
         planMode:
           type: boolean
+        image_urls:
+          type: array
+          description: Public http(s) image URLs to attach to this message. The agent can see them. You do not need to upload first.
+          items:
+            type: string
+            format: uri
+          maxItems: 8
+        image_url:
+          type: string
+          format: uri
+          description: Single public image URL. Same as `image_urls` with one item.
         attachmentIds:
           type: array
+          description: IDs of files you already uploaded in the product. Optional if you pass `image_urls`.
           items:
             type: string
             format: uuid
-        chatId:
-          type: string
-          format: uuid
-          description: Only on `POST /completions`. Omitted creates a chat.
+    CompletionBody:
+      allOf:
+        - $ref: "#/components/schemas/SendBody"
+        - type: object
+          properties:
+            chatId:
+              type: string
+              format: uuid
+              description: Existing chat. Omit this field to create a chat and send in one call.
     RunSnapshot:
       type: object
       required: [chatId, runId, messageId, status]
@@ -276,7 +311,8 @@ paths:
                 $ref: "#/components/schemas/Error"
     post:
       tags: [Chats]
-      summary: Create a chat
+      summary: Create an empty chat
+      description: Optional. To send a first message without this step, use `POST /completions` and omit `chatId`.
       operationId: createChat
       requestBody:
         content:
@@ -351,7 +387,8 @@ paths:
           description: Messages, newest first, with content blocks and attachments
     post:
       tags: [Messages]
-      summary: Send a message
+      summary: Send a message in an existing chat
+      description: Requires `chatId`. Attach images with `image_urls` (public URLs) or `attachmentIds`. To start a new chat in one call, use `POST /completions` instead.
       operationId: sendMessage
       parameters:
         - $ref: "#/components/parameters/chatId"
@@ -361,6 +398,17 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SendBody"
+            examples:
+              textOnly:
+                summary: Text only
+                value:
+                  text: Summarize what this agent can do
+              withImage:
+                summary: Text plus an image URL
+                value:
+                  text: What is in this photo?
+                  image_urls:
+                    - https://cdn.example.com/photo.jpg
       responses:
         "201":
           description: Turn queued
@@ -389,9 +437,9 @@ paths:
   /chats/{chatId}/completions:
     post:
       tags: [Messages]
-      summary: Chat-style completion
+      summary: Chat-style completion in an existing chat
       operationId: chatCompletion
-      description: Same admission as send. Accepts `text`, `prompt`, or OpenAI-style `messages`.
+      description: Same as send on an existing chat. Accepts `text`, `prompt`, or OpenAI-style `messages`, plus `image_urls`.
       parameters:
         - $ref: "#/components/parameters/chatId"
       requestBody:
@@ -400,6 +448,13 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SendBody"
+            examples:
+              withImage:
+                summary: Text plus an image URL
+                value:
+                  text: Crop the subject
+                  image_urls:
+                    - https://cdn.example.com/photo.jpg
       responses:
         "202":
           description: Turn queued
@@ -416,14 +471,34 @@ paths:
   /completions:
     post:
       tags: [Messages]
-      summary: Completion, creating a chat if needed
+      summary: Send a message (creates a chat if needed)
+      description: |
+        One-call send. Omit `chatId` to create a chat and queue the turn.
+        Pass `chatId` to continue an existing chat.
+        Attach images with `image_urls` (public http(s) URLs) or `attachmentIds`.
       operationId: completion
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SendBody"
+              $ref: "#/components/schemas/CompletionBody"
+            examples:
+              newChat:
+                summary: Send without creating a chat first
+                value:
+                  text: What is in this photo?
+                  image_urls:
+                    - https://cdn.example.com/photo.jpg
+              existingChat:
+                summary: Send into an existing chat
+                value:
+                  chatId: 11111111-1111-4111-8111-111111111111
+                  text: Continue from here
+              textOnly:
+                summary: Text only, new chat
+                value:
+                  text: Summarize what this agent can do
       responses:
         "202":
           description: Turn queued

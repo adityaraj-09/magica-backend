@@ -41,8 +41,8 @@ description: Connect an assistant to chats, runs, and Magica tools with the same
 | `create_chat` | Optional `title`. |
 | `delete_chat` | Soft-delete. |
 | `list_messages` | History, newest first. |
-| `send_message` | Queue a turn in an existing chat. |
-| `complete` | Queue a turn. Omit `chatId` to create a chat. Accepts `text`, `prompt`, or `messages`. |
+| `send_message` | Queue a turn in an existing chat. Attach images with `image_urls` or `attachmentIds`. |
+| `complete` | Send a message. Omit `chatId` to create a chat. Accepts `text`, `prompt`, `messages`, and `image_urls`. |
 | `get_run` | Run snapshot. No realtime token. |
 | `crop_image` | Magica crop. One complete rectangle. |
 | `gpt_image_2` | Generate, or edit when `image_url` is set. |

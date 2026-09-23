@@ -16,6 +16,118 @@ export const sendAttachmentIdsSchema = z
   .optional()
   .default([]);
 
+export const sendImageUrlsSchema = z
+  .array(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine((url) => /^https?:\/\//i.test(url), "Image URLs must be http(s)"),
+  )
+  .max(MAX_FILES_PER_ASSEMBLY)
+  .optional()
+  .default([]);
+
+export function collectSendImageUrls(body: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string") {
+      const url = value.trim();
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        out.push(url);
+      }
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(add);
+  };
+  add(body.imageUrls);
+  add(body.image_urls);
+  add(body.imageUrl);
+  add(body.image_url);
+  return out;
+}
+
+export function mimeFromAssetUrl(url: string): string {
+  const path = url.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".gif")) return "image/gif";
+  if (path.endsWith(".heic")) return "image/heic";
+  if (path.endsWith(".mp4")) return "video/mp4";
+  if (path.endsWith(".webm")) return "video/webm";
+  if (path.endsWith(".mov")) return "video/quicktime";
+  return "image/png";
+}
+
+export function filenameFromAssetUrl(url: string): string {
+  try {
+    const name = new URL(url).pathname.split("/").filter(Boolean).at(-1);
+    return name ? decodeURIComponent(name).slice(0, 80) : "image";
+  } catch {
+    return "image";
+  }
+}
+
+export async function persistSendImageUrls(input: {
+  userId: string;
+  chatId: string;
+  urls: string[];
+  db: Prisma.TransactionClient | PrismaClient;
+}): Promise<ResolvedSendAttachment[]> {
+  const urls = [...new Set(input.urls.map((url) => url.trim()).filter(Boolean))];
+  const created: ResolvedSendAttachment[] = [];
+  for (const url of urls) {
+    const existing = await input.db.attachment.findFirst({
+      where: { userId: input.userId, url, status: "COMPLETE" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        chatId: true,
+        filename: true,
+        mimeType: true,
+        url: true,
+      },
+    });
+    if (existing?.url) {
+      created.push({
+        id: existing.id,
+        filename: existing.filename,
+        mimeType: existing.mimeType,
+        url: existing.url,
+        source: existing.chatId === input.chatId ? "DIRECT_UPLOAD" : "MEDIA_LIBRARY",
+      });
+      continue;
+    }
+    const mimeType = mimeFromAssetUrl(url);
+    const filename = filenameFromAssetUrl(url);
+    const row = await input.db.attachment.create({
+      data: {
+        userId: input.userId,
+        chatId: input.chatId,
+        origin: "UPLOAD",
+        status: "COMPLETE",
+        filename,
+        mimeType,
+        byteSize: 0,
+        url,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+      select: { id: true, filename: true, mimeType: true, url: true },
+    });
+    if (!row.url) continue;
+    created.push({
+      id: row.id,
+      filename: row.filename,
+      mimeType: row.mimeType,
+      url: row.url,
+      source: "DIRECT_UPLOAD",
+    });
+  }
+  return created;
+}
+
 export type ResolvedSendAttachment = {
   id: string;
   filename: string;

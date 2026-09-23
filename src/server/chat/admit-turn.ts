@@ -2,21 +2,36 @@ import { Prisma, type PrismaClient, type User } from "@prisma/client";
 import { z } from "zod";
 import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types";
 import { searchTextFromBlocks, type ContentBlock } from "@/agent/runtime/content-blocks";
-import { prisma } from "@/server/db";
+import { prisma, TRANSACTION_OPTIONS } from "@/server/db";
 import { HttpError } from "@/server/http/errors";
+import type { ResolvedSendAttachment } from "@/server/chat/attachments";
 import { parseSendRateLimit, type SendRateLimit } from "@/server/http/rate-limit";
 import { parseTurnReserve, reserveIdempotencyKey } from "@/server/credits/reserve";
-import { resolveSendAttachments, sendAttachmentIdsSchema } from "@/server/chat/attachments";
+import {
+  collectSendImageUrls,
+  persistSendImageUrls,
+  resolveSendAttachments,
+  sendAttachmentIdsSchema,
+  sendImageUrlsSchema,
+} from "@/server/chat/attachments";
+import { MAX_FILES_PER_ASSEMBLY } from "@/server/uploads/transloadit";
 import { dispatchAgentTurn } from "@/server/jobs/dispatch";
 import { logInfo, logWarn, traceFields } from "@/server/log";
 import { createRunRealtimeToken } from "@/server/realtime/token";
 
-export const sendMessageBodySchema = z.object({
+const sendMessageFieldsSchema = z.object({
   text: z.string().trim().min(1).max(8192),
   clientMessageId: z.string().uuid().optional(),
   planMode: z.boolean().optional(),
   attachmentIds: sendAttachmentIdsSchema,
+  imageUrls: sendImageUrlsSchema,
 });
+
+export const sendMessageBodySchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object") return raw;
+  const record = raw as Record<string, unknown>;
+  return { ...record, imageUrls: collectSendImageUrls(record) };
+}, sendMessageFieldsSchema);
 
 const chatIdSchema = z.string().uuid();
 
@@ -45,15 +60,44 @@ export async function admitTurn(input: {
   const reserve = parseTurnReserve(process.env.CREDIT_RESERVE_TURN);
   const rateLimit = parseSendRateLimit(process.env);
 
-  const persisted = await db.$transaction((tx) =>
-    persistAdmission(tx, {
-      user: input.user,
-      chatId,
-      body,
-      reserve,
-      rateLimit,
-    }),
-  );
+  const attached = await resolveSendAttachments({
+    userId: input.user.id,
+    chatId,
+    attachmentIds: body.attachmentIds,
+    db,
+  });
+  if (attached.length + body.imageUrls.length > MAX_FILES_PER_ASSEMBLY) {
+    throw new HttpError(
+      `A turn can include at most ${MAX_FILES_PER_ASSEMBLY} files`,
+      400,
+      "TOO_MANY_ATTACHMENTS",
+    );
+  }
+
+  let persisted: Awaited<ReturnType<typeof persistAdmission>>;
+  try {
+    persisted = await db.$transaction(
+      (tx) =>
+        persistAdmission(tx, {
+          user: input.user,
+          chatId,
+          body,
+          reserve,
+          rateLimit,
+          attached,
+        }),
+      TRANSACTION_OPTIONS,
+    );
+  } catch (error) {
+    if (isClosedTransaction(error)) {
+      throw new HttpError(
+        "Could not start the turn. Try sending again.",
+        503,
+        "DATABASE_BUSY",
+      );
+    }
+    throw error;
+  }
 
   let handle: { id: string };
   try {
@@ -133,6 +177,7 @@ async function persistAdmission(
     body: SendMessageBody;
     reserve: Prisma.Decimal;
     rateLimit: SendRateLimit;
+    attached: ResolvedSendAttachment[];
   },
 ): Promise<{
   chatId: string;
@@ -197,15 +242,23 @@ async function persistAdmission(
     throw new HttpError("Not enough credits to start a turn", 402, "CREDITS_INSUFFICIENT");
   }
 
-  const attached = await resolveSendAttachments({
+  const fromUrls = await persistSendImageUrls({
     userId: input.user.id,
     chatId: chat.id,
-    attachmentIds: input.body.attachmentIds,
+    urls: input.body.imageUrls,
     db: tx,
   });
+  const files = [...input.attached, ...fromUrls];
+  if (files.length > MAX_FILES_PER_ASSEMBLY) {
+    throw new HttpError(
+      `A turn can include at most ${MAX_FILES_PER_ASSEMBLY} files`,
+      400,
+      "TOO_MANY_ATTACHMENTS",
+    );
+  }
   const blocks: ContentBlock[] = [
     { type: "text", text: input.body.text },
-    ...attached.map(
+    ...files.map(
       (file): ContentBlock => ({
         type: "asset",
         url: file.url,
@@ -223,9 +276,9 @@ async function persistAdmission(
       status: "SUCCESS",
       contentBlocks: blocks as Prisma.InputJsonValue,
       searchText: searchTextFromBlocks(blocks),
-      attachments: attached.length
+      attachments: files.length
         ? {
-            create: attached.map((file, sortOrder) => ({
+            create: files.map((file, sortOrder) => ({
               attachmentId: file.id,
               chatId: chat.id,
               source: file.source,
@@ -327,6 +380,10 @@ async function loadOrCreateChat(
     }
     throw error;
   }
+}
+
+function isClosedTransaction(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028";
 }
 
 function isUniqueOn(error: unknown, field: string): boolean {

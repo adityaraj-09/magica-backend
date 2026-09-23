@@ -7,7 +7,7 @@ Chats belong to the user behind the API key. Another user's id is `404 CHAT_NOT_
 
 ## Create
 
-`POST /api/v1/chats` returns `201`.
+`POST /api/v1/chats` returns `201`. This is optional. To send a first message in one call, use `POST /api/v1/completions` and omit `chatId`.
 
 <ParamField body="title" type="string">
   Optional. 1–120 characters. Omitted titles get a default.
