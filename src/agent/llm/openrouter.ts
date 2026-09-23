@@ -77,7 +77,7 @@ export class OpenRouterFreeClient implements ChatClient {
       throw await httpError(response);
     }
     if (!response.body) {
-      throw new LlmError("EMPTY_STREAM", "Free models returned no output. Try again.");
+      throw emptyStreamError();
     }
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -217,7 +217,7 @@ export class OpenRouterFreeClient implements ChatClient {
 
     if (!input.modelRouted) {
       if (empty) {
-        throw new LlmError("EMPTY_STREAM", "Free models returned no output. Try again.");
+        throw emptyStreamError();
       }
       throw new LlmError("FAILED", "OpenRouter did not report the routed model", {
         partialText: text,
@@ -241,9 +241,7 @@ export class OpenRouterFreeClient implements ChatClient {
     }
 
     if (empty) {
-      throw new LlmError("EMPTY_STREAM", "Free models returned no output. Try again.", {
-        modelRouted: input.modelRouted,
-      });
+      throw emptyStreamError(input.modelRouted);
     }
 
     if (input.finishReason === "tool_calls" && !hasTools) {
@@ -331,6 +329,13 @@ function toUsage(usage: StreamChunk["usage"]): LlmUsage {
     completionTokens: Number(usage?.completion_tokens) || 0,
     cost: Number.isFinite(cost) ? cost : 0,
   };
+}
+
+function emptyStreamError(modelRouted?: string): LlmError {
+  return new LlmError("EMPTY_STREAM", "Free models returned no output. Try again.", {
+    retryable: true,
+    modelRouted,
+  });
 }
 
 function streamError(

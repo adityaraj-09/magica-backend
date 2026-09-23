@@ -136,7 +136,22 @@ export async function runAgentLoop(
             status: "STREAMING",
           }),
       });
-      const completion = await completeWithRetry(deps, llmMessages, sink);
+      let completion;
+      try {
+        completion = await completeWithRetry(deps, llmMessages, sink);
+      } catch (error) {
+        if (isEmptyAfterUsefulWork(error, blocks)) {
+          return terminate(deps, run, assistant.id, blocks, live, realtime, {
+            status: "COMPLETE",
+            promptTokens,
+            completionTokens,
+            modelRouted,
+            thinkingStartedAt,
+            userText,
+          });
+        }
+        throw error;
+      }
       await sink.flush();
       promptTokens += completion.usage.promptTokens;
       completionTokens += completion.usage.completionTokens;
@@ -296,6 +311,16 @@ export async function runAgentLoop(
       errorMessage: "The agent reached the maximum number of tool turns.",
     });
   } catch (error) {
+    if (isEmptyAfterUsefulWork(error, blocks)) {
+      return terminate(deps, run, assistant.id, blocks, live, realtime, {
+        status: "COMPLETE",
+        promptTokens,
+        completionTokens,
+        modelRouted,
+        thinkingStartedAt,
+        userText,
+      });
+    }
     const aborted = deps.signal.aborted || isCancelled(error);
     return terminate(deps, run, assistant.id, blocks, live, realtime, {
       status: aborted ? "CANCELLED" : "FAILED",
@@ -325,6 +350,14 @@ async function nameChatFromUserText(
   } catch {
     // A missing name must not fail the turn.
   }
+}
+
+function isEmptyAfterUsefulWork(error: unknown, blocks: ContentBlock[]): boolean {
+  if (!(error instanceof LlmError) || error.code !== "EMPTY_STREAM") return false;
+  return blocks.some(
+    (block) =>
+      block.type === "asset" || (block.type === "tool_result" && !block.error),
+  );
 }
 
 function buildMessages(

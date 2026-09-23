@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
+import { LlmError } from "@/agent/llm/errors";
 import { OPENROUTER_FREE_ROUTE } from "@/agent/llm/types";
 import type { ChatClient, ChatCompletionResult } from "@/agent/llm/types";
 import { ToolError } from "@/agent/tools/errors";
@@ -853,5 +854,57 @@ describe("runAgentLoop", () => {
       }),
     );
     expect(llm.complete).toHaveBeenCalledTimes(3);
+  });
+
+  it("completes after a successful image when the follow-up model stream is empty", async () => {
+    const generatedUrl = "https://cdn.magica.test/gen.png";
+    const registry = new ToolRegistry();
+    registry.register({
+      name: TOOL_NAMES.gptImage2,
+      description: "Generate",
+      provider: "MAGICA",
+      availability: "required",
+      execution: "inline",
+      rendererKey: "generated-image",
+      input: gptImage2InputSchema,
+      output: gptImage2OutputSchema,
+      estimateCredits: () => "0",
+      execute: async () => ({
+        output: { image_url: generatedUrl, mode: "gpt-image-2-text" as const },
+        creditCost: "0",
+        durationMs: 4,
+        assets: [{ url: generatedUrl, mimeType: "image/png" }],
+      }),
+    });
+    const llm: ChatClient = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          completion({
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "call_gen",
+                name: "gpt_image_2",
+                arguments: { prompt: "a mountain" },
+                rawArguments: '{"prompt":"a mountain"}',
+              },
+            ],
+          }),
+        )
+        .mockRejectedValue(new LlmError("EMPTY_STREAM", "Free models returned no output. Try again.")),
+    };
+    const deps = createDeps(llm, { registry });
+    const result = await runAgentLoop(turn, deps);
+    expect(result.status).toBe("COMPLETE");
+    expect(deps.store.saveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "SUCCESS",
+        errorMessage: undefined,
+        blocks: expect.arrayContaining([
+          expect.objectContaining({ type: "asset", url: generatedUrl }),
+        ]),
+      }),
+    );
   });
 });

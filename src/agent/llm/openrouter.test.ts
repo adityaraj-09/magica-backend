@@ -255,7 +255,10 @@ describe("OpenRouterFreeClient", () => {
         },
       ]);
 
-    await expect(complete(fetchImpl)).rejects.toMatchObject({ code: "EMPTY_STREAM" });
+    await expect(complete(fetchImpl)).rejects.toMatchObject({
+      code: "EMPTY_STREAM",
+      retryable: true,
+    });
   });
 
   it("rejects a paid routed model even if the request asked for the free route", async () => {
