@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ToolError } from "../errors";
 import { resolveInside } from "../../skills/paths";
 import { MAX_ASSET_BYTES, SkillRegistry, sha256 } from "../../skills/registry";
@@ -110,11 +112,20 @@ export class FilesystemSkillLoaderAdapter implements SkillLoaderAdapter {
 let cachedLoader: Promise<SkillLoaderAdapter> | undefined;
 let cachedRootsKey: string | undefined;
 
+const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+
+export function resolveSkillRoot(raw: string, cwd = process.cwd()): string {
+  if (path.isAbsolute(raw)) return raw;
+  const candidates = [path.resolve(cwd, raw), path.resolve(BACKEND_ROOT, raw)];
+  return candidates.find((dir) => existsSync(dir)) ?? path.resolve(cwd, raw);
+}
+
 function skillRoots(env: NodeJS.ProcessEnv): string[] {
   return (env.SKILLS_DIR ?? "agent-skills")
     .split(",")
     .map((value) => value.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((value) => resolveSkillRoot(value));
 }
 
 function rootsKey(env: NodeJS.ProcessEnv): string {

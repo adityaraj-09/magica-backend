@@ -5,6 +5,8 @@ import { prismaExtension } from "@trigger.dev/build/extensions/prisma";
 export default defineConfig({
   project: process.env.TRIGGER_PROJECT_REF ?? "proj_unset",
   dirs: ["./src/trigger"],
+  // Match production: cwd is the build directory where additionalFiles copies agent-skills/.
+  legacyDevProcessCwdBehaviour: false,
   retries: {
     enabledInDev: false,
     default: {

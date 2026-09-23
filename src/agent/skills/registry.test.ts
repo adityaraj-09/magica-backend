@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FilesystemSkillLoaderAdapter } from "../tools/adapters/skills";
+import { FilesystemSkillLoaderAdapter, resolveSkillRoot } from "../tools/adapters/skills";
 import { ToolError } from "../tools/errors";
 import type { ToolExecutionContext } from "../tools/types";
 import { SkillRegistry } from "./registry";
@@ -39,6 +39,10 @@ async function writeSkill(
 }
 
 describe("SkillRegistry", () => {
+  it("finds agent-skills even when cwd is not the backend root", () => {
+    expect(resolveSkillRoot("agent-skills", tmpdir())).toBe(shippedSkills);
+  });
+
   it("exposes only names and descriptions until a skill is loaded", async () => {
     const registry = await SkillRegistry.load([shippedSkills]);
     const metadata = registry.listMetadata();
