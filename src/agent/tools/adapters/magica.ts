@@ -85,8 +85,8 @@ export class MagicaApiAdapter implements MagicaAdapter {
     ctx: ToolExecutionContext,
   ): Promise<ToolExecutionResult<CropImageOutput>> {
     const input = cropImageInputSchema.parse(raw);
-    const schema = await this.getSchema("crop_image", ctx.signal);
-    const payload = buildCropPayload(input, schema.fields ?? []);
+    // Schema for crop_image is incomplete / 403s; the node wants image_url + percent or pixel fields.
+    const payload = buildCropPayload(input, []);
     const run = await this.startAndWait("crop_image", payload, undefined, ctx);
     const imageUrl = extractMediaUrl(run.output, ["image_url", "images", "image", "url"]);
     if (!imageUrl) {
@@ -361,37 +361,67 @@ function fieldName(fields: MagicaField[], candidates: string[]): string | undefi
   return undefined;
 }
 
-function buildCropPayload(input: CropImageInput, fields: MagicaField[]): Record<string, unknown> {
+export function buildCropPayload(input: CropImageInput, fields: MagicaField[] = []): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     [fieldName(fields, ["image_url", "image", "url", "imageUrl"]) ?? "image_url"]: input.image_url,
   };
-
-  if (input.crop) {
-    const cropField = fieldName(fields, ["crop"]);
-    if (cropField) {
-      payload[cropField] = input.crop;
-      return payload;
-    }
-    assignIfPresent(payload, fields, "x", input.crop.x);
-    assignIfPresent(payload, fields, "y", input.crop.y);
-    assignIfPresent(payload, fields, "width", input.crop.width);
-    assignIfPresent(payload, fields, "height", input.crop.height);
+  const rect = normalizeCropRect(input);
+  if (rect.kind === "percent") {
+    assignIfPresent(payload, fields, "x_percent", rect.x, ["x_percent", "xPercent"]);
+    assignIfPresent(payload, fields, "y_percent", rect.y, ["y_percent", "yPercent"]);
+    assignIfPresent(payload, fields, "width_percent", rect.width, ["width_percent", "widthPercent"]);
+    assignIfPresent(payload, fields, "height_percent", rect.height, ["height_percent", "heightPercent"]);
     return payload;
   }
-
-  if (input.x !== undefined && input.y !== undefined && input.width !== undefined && input.height !== undefined) {
-    assignIfPresent(payload, fields, "x", input.x);
-    assignIfPresent(payload, fields, "y", input.y);
-    assignIfPresent(payload, fields, "width", input.width);
-    assignIfPresent(payload, fields, "height", input.height);
-    return payload;
-  }
-
-  assignIfPresent(payload, fields, "x_percent", input.x_percent, ["x_percent", "xPercent"]);
-  assignIfPresent(payload, fields, "y_percent", input.y_percent, ["y_percent", "yPercent"]);
-  assignIfPresent(payload, fields, "width_percent", input.width_percent, ["width_percent", "widthPercent"]);
-  assignIfPresent(payload, fields, "height_percent", input.height_percent, ["height_percent", "heightPercent"]);
+  assignIfPresent(payload, fields, "x", rect.x);
+  assignIfPresent(payload, fields, "y", rect.y);
+  assignIfPresent(payload, fields, "width", rect.width);
+  assignIfPresent(payload, fields, "height", rect.height);
   return payload;
+}
+
+function normalizeCropRect(input: CropImageInput): {
+  kind: "percent" | "pixel";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (
+    input.x_percent !== undefined &&
+    input.y_percent !== undefined &&
+    input.width_percent !== undefined &&
+    input.height_percent !== undefined
+  ) {
+    return {
+      kind: "percent",
+      x: input.x_percent,
+      y: input.y_percent,
+      width: input.width_percent,
+      height: input.height_percent,
+    };
+  }
+  if (input.crop) {
+    const { x, y, width, height } = input.crop;
+    return {
+      kind: looksLikePercent(x, y, width, height) ? "percent" : "pixel",
+      x,
+      y,
+      width,
+      height,
+    };
+  }
+  return {
+    kind: "pixel",
+    x: input.x ?? 0,
+    y: input.y ?? 0,
+    width: input.width ?? 0,
+    height: input.height ?? 0,
+  };
+}
+
+function looksLikePercent(x: number, y: number, width: number, height: number): boolean {
+  return [x, y, width, height].every((value) => value >= 0 && value <= 100);
 }
 
 function buildGptImagePayload(input: GptImage2Input, fields: MagicaField[]): Record<string, unknown> {

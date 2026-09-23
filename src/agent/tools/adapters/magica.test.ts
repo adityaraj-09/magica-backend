@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolError } from "../errors";
 import { gptImage2InputSchema } from "../schemas";
 import type { ToolExecutionContext } from "../types";
-import { MagicaApiAdapter } from "./magica";
+import { buildCropPayload, MagicaApiAdapter } from "./magica";
 
 const ctxBase = {
   chatId: "11111111-1111-1111-1111-111111111111",
@@ -64,6 +64,38 @@ function adapter() {
 function ctx(signal = new AbortController().signal): ToolExecutionContext {
   return { ...ctxBase, signal };
 }
+
+describe("buildCropPayload", () => {
+  it("maps crop.{x,y,width,height} in 0–100 to Magica percent fields", () => {
+    expect(
+      buildCropPayload({
+        image_url: "https://cdn.example/in.png",
+        crop: { x: 50, y: 0, width: 50, height: 100 },
+      }),
+    ).toEqual({
+      image_url: "https://cdn.example/in.png",
+      x_percent: 50,
+      y_percent: 0,
+      width_percent: 50,
+      height_percent: 100,
+    });
+  });
+
+  it("keeps large crop values as pixels", () => {
+    expect(
+      buildCropPayload({
+        image_url: "https://cdn.example/in.png",
+        crop: { x: 120, y: 40, width: 640, height: 480 },
+      }),
+    ).toEqual({
+      image_url: "https://cdn.example/in.png",
+      x: 120,
+      y: 40,
+      width: 640,
+      height: 480,
+    });
+  });
+});
 
 describe("MagicaApiAdapter", () => {
   afterEach(() => {
