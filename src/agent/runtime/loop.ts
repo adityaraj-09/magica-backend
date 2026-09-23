@@ -505,6 +505,7 @@ async function executeProposals(input: {
       }
 
       let provider: "MAGICA" | "E2B" | "EXA" | "SKILL" | "INTERNAL" = "INTERNAL";
+      let announced = false;
       try {
         const tool = input.deps.registry.get(proposal.name);
         provider = tool.provider;
@@ -549,10 +550,13 @@ async function executeProposals(input: {
           status: "RUNNING",
           payload: proposal.arguments,
         });
+        await flush([useBlock(proposal)]);
+        announced = true;
         publishTool(input, {
           toolCallId: proposal.id,
           toolName: proposal.name,
           status: "RUNNING",
+          input: proposal.arguments,
         });
         const result = await executeToolWithRetry({
           registry: input.deps.registry,
@@ -633,20 +637,8 @@ async function executeProposals(input: {
             },
           })
           .catch(() => undefined);
-        const blocks: ContentBlock[] = [
-          {
-            type: "tool_use",
-            toolCallId: proposal.id,
-            toolName: proposal.name,
-            input: proposal.arguments,
-          },
-          {
-            type: "tool_result",
-            toolCallId: proposal.id,
-            toolName: proposal.name,
-            output: result.output,
-            durationMs: result.durationMs,
-          },
+        const persisted: ContentBlock[] = [
+          resultOnly(proposal, result.output, null, result.durationMs),
           ...assets.map(
             (asset): ContentBlock => ({
               type: "asset",
@@ -656,10 +648,11 @@ async function executeProposals(input: {
             }),
           ),
         ];
+        const blocks = [useBlock(proposal), ...persisted];
         if (settled.exhausted) {
           batchAbort.abort();
           resolveShared?.(blocks);
-          await flush(blocks);
+          await flush(persisted);
           return {
             index,
             aborted: new ToolError(
@@ -671,7 +664,7 @@ async function executeProposals(input: {
           };
         }
         resolveShared?.(blocks);
-        await flush(blocks);
+        await flush(persisted);
         return { index, block: blocks };
       } catch (error) {
         const cancelled = input.deps.signal.aborted || batchAbort.signal.aborted || isCancelled(error);
@@ -693,7 +686,7 @@ async function executeProposals(input: {
           });
           const block = resultBlock(proposal, undefined, userSafeError(error));
           resolveShared?.(null);
-          await flush(block);
+          await flush(announced ? [resultOnly(proposal, undefined, userSafeError(error))] : block);
           return {
             index,
             aborted: error instanceof ToolError || error instanceof LlmError
@@ -718,7 +711,7 @@ async function executeProposals(input: {
         });
         const block = resultBlock(proposal, undefined, userSafeError(error));
         resolveShared?.(null);
-        await flush(block);
+        await flush(announced ? [resultOnly(proposal, undefined, userSafeError(error))] : block);
         return {
           index,
           block,
@@ -951,26 +944,37 @@ function syntheticMalformed(
   }));
 }
 
+function useBlock(proposal: LlmToolCallProposal): ContentBlock {
+  return {
+    type: "tool_use",
+    toolCallId: proposal.id,
+    toolName: proposal.name,
+    input: proposal.arguments,
+  };
+}
+
+function resultOnly(
+  proposal: LlmToolCallProposal,
+  output: unknown,
+  error: string | null,
+  durationMs?: number,
+): ContentBlock {
+  return {
+    type: "tool_result",
+    toolCallId: proposal.id,
+    toolName: proposal.name,
+    output: error ? undefined : output,
+    error: error ?? undefined,
+    durationMs,
+  };
+}
+
 function resultBlock(
   proposal: LlmToolCallProposal,
   output: unknown,
   error: string | null,
 ): ContentBlock[] {
-  return [
-    {
-      type: "tool_use",
-      toolCallId: proposal.id,
-      toolName: proposal.name,
-      input: proposal.arguments,
-    },
-    {
-      type: "tool_result",
-      toolCallId: proposal.id,
-      toolName: proposal.name,
-      output: error ? undefined : output,
-      error: error ?? undefined,
-    },
-  ];
+  return [useBlock(proposal), resultOnly(proposal, output, error)];
 }
 
 function throwIfAborted(signal: AbortSignal): void {

@@ -55,6 +55,7 @@ export async function loadRunSnapshot(input: {
           toolName: true,
           status: true,
           errorMessage: true,
+          input: true,
         },
       },
       messages: {
@@ -97,6 +98,7 @@ export async function loadRunSnapshot(input: {
       toolName: tool.toolName,
       status: tool.status,
       errorMessage: tool.errorMessage,
+      input: tool.input,
     })),
     waitpoint,
     errorCode: run.errorCode,

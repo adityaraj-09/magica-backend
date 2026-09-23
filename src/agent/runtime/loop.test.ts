@@ -819,6 +819,29 @@ describe("runAgentLoop", () => {
     const deps = createDeps(llm, { registry, waitpoints: { awaitApproval } });
     const result = await runAgentLoop(turn, deps);
     expect(result.status).toBe("COMPLETE");
+    expect(deps.realtime?.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: expect.arrayContaining([
+          expect.objectContaining({
+            toolName: "gpt_image_2",
+            status: "RUNNING",
+            input: { prompt: "a blue circle" },
+          }),
+        ]),
+      }),
+    );
+    expect(deps.store.saveAssistant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "STREAMING",
+        blocks: expect.arrayContaining([
+          expect.objectContaining({
+            type: "tool_use",
+            toolName: "gpt_image_2",
+            input: { prompt: "a blue circle" },
+          }),
+        ]),
+      }),
+    );
     expect(deps.store.saveGeneratedAssets).toHaveBeenCalledWith(
       expect.objectContaining({
         assets: [expect.objectContaining({ url: generatedUrl })],

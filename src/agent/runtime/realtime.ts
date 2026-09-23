@@ -35,6 +35,7 @@ export const toolLiveSchema = z.object({
   toolName: z.string().min(1),
   status: toolLiveStatusSchema,
   errorMessage: z.string().nullable().optional(),
+  input: z.unknown().optional(),
 });
 
 export const waitpointOverlaySchema = z.object({
@@ -119,7 +120,8 @@ export function upsertToolLive(tools: ToolLive[], next: ToolLive): ToolLive[] {
   const index = tools.findIndex((tool) => tool.toolCallId === next.toolCallId);
   if (index < 0) return [...tools, next];
   const copy = [...tools];
-  copy[index] = { ...copy[index], ...next };
+  const input = next.input ?? copy[index]?.input;
+  copy[index] = input !== undefined ? { ...copy[index], ...next, input } : { ...copy[index], ...next };
   return copy;
 }
 

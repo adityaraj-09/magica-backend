@@ -93,6 +93,7 @@ describe("MagicaApiAdapter", () => {
     expect(result.output).toMatchObject({
       image_url: "https://cdn.magica.test/gen.png",
       mode: "gpt-image-2-text",
+      prompt: "a red square on white",
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/schema"))).toBe(false);
   });

@@ -62,6 +62,7 @@ export const gptImage2InputSchema = z
 export const gptImage2OutputSchema = z.object({
   image_url: urlSchema,
   mode: z.enum(["gpt-image-2-text", "gpt-image-2-edit"]),
+  prompt: z.string().min(1).max(4000).optional(),
 });
 
 export const mergeVideosInputSchema = z.object({

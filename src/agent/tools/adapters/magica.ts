@@ -110,7 +110,11 @@ export class MagicaApiAdapter implements MagicaAdapter {
     return this.toResult(
       run,
       ctx,
-      gptImage2OutputSchema.parse({ image_url: imageUrl, mode: input.mode }),
+      gptImage2OutputSchema.parse({
+        image_url: imageUrl,
+        mode: input.mode,
+        prompt: input.prompt,
+      }),
       imageUrl,
     );
   }
