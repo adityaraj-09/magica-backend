@@ -18,9 +18,19 @@ vi.mock("@/server/chat/admit-turn.js", async () => {
   return { ...actual, admitTurn: admit };
 });
 
+import type { User } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { admitPublicSend } from "./send";
 
-const user = { id: "22222222-2222-2222-2222-222222222222" } as never;
+const userId = "22222222-2222-2222-2222-222222222222";
+const user = {
+  id: userId,
+  clerkUserId: "user_test",
+  email: "ada@example.com",
+  creditBalance: new Prisma.Decimal("100"),
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+} satisfies User;
 
 describe("admitPublicSend", () => {
   it("uploads multipart files then admits with those attachment ids", async () => {
@@ -48,7 +58,7 @@ describe("admitPublicSend", () => {
     const result = await admitPublicSend({ user, request });
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({
-        userId: user.id,
+        userId,
         files: [expect.objectContaining({ filename: "shot.png", mimeType: "image/png" })],
       }),
     );
